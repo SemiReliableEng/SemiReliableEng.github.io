@@ -1,5 +1,5 @@
 // Marginalia Service Worker
-const CACHE = 'marginalia-v23';
+const CACHE = 'marginalia-v24';
 const ASSETS = [
   '/apps/marginalia/',
   '/apps/marginalia/index.html',
@@ -13,6 +13,16 @@ self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())
   );
+});
+
+// Message: answer version queries from the page so the settings panel can
+// display which CACHE is actually handling fetches. A mismatch between the
+// SW's version and the HTML's declared APP_VERSION signals that the SW is
+// stale and the next refresh will still serve old HTML out of cache.
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'get-cache-version' && e.ports && e.ports[0]) {
+    e.ports[0].postMessage({ cache: CACHE });
+  }
 });
 
 // Activate: clean up old caches

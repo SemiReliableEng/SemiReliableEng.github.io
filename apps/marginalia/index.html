@@ -1392,6 +1392,8 @@
         </div>
       </div>
 
+      <div class="settings-hint" style="text-align:center;font-family:var(--mono);font-size:11px;opacity:0.55;margin-top:20px" id="app-version-line">Version —</div>
+
     </div>
   </div>
 
@@ -1511,6 +1513,12 @@
 // ═══════════════════════════════════════════════
 // DATA LAYER (WAL / Event-Sourced)
 // ═══════════════════════════════════════════════
+// Bump alongside sw.js CACHE on every UI change. Displayed on the settings
+// page so you can see which build is live on each device without opening
+// DevTools (useful on mobile PWAs, where the service worker cache can lag
+// behind a deploy and leave the old HTML in place for a refresh or two).
+const APP_VERSION = 'marginalia-v24';
+
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
 const LAST_ACCESSED_KEY = 'marginalia_last_accessed';
@@ -2891,6 +2899,30 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/apps/marginalia/sw.js').catch(() => {});
   });
 }
+
+// ── Version line in settings ──────────────────────
+// Show the HTML's declared version, then append the active SW's CACHE if it
+// reports back — a mismatch means the SW is stale and the next refresh will
+// still serve old HTML out of its cache.
+(function renderVersionLine() {
+  const el = document.getElementById('app-version-line');
+  if (!el) return;
+  el.textContent = `Version ${APP_VERSION}`;
+  if (!navigator.serviceWorker) return;
+  navigator.serviceWorker.ready.then((reg) => {
+    const target = reg.active || navigator.serviceWorker.controller;
+    if (!target) return;
+    const chan = new MessageChannel();
+    chan.port1.onmessage = (ev) => {
+      const swCache = ev.data && ev.data.cache;
+      if (!swCache) return;
+      el.textContent = swCache === APP_VERSION
+        ? `Version ${APP_VERSION}`
+        : `Version ${APP_VERSION} · SW: ${swCache}`;
+    };
+    try { target.postMessage({ type: 'get-cache-version' }, [chan.port2]); } catch {}
+  }).catch(() => {});
+})();
 </script>
 
 <!-- ══ SYNC MODULE GLUE ══════════════════════════════════════════════ -->
