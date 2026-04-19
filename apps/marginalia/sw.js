@@ -1,5 +1,5 @@
 // Marginalia Service Worker
-const CACHE = 'marginalia-v21';
+const CACHE = 'marginalia-v22';
 const ASSETS = [
   '/apps/marginalia/',
   '/apps/marginalia/index.html',

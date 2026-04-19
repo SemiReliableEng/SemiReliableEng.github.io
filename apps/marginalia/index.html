@@ -3033,6 +3033,7 @@ async function putSnapshot(settings, snap, sha, message) {
 const _pull = sync.pull.bind(sync);
 sync.pull = async () => {
   const settings = getSettings();
+  let snapshotChanged = false;
   if (settings) {
     try {
       const { snapshot: remoteSnap, sha } = await fetchSnapshot(settings);
@@ -3040,12 +3041,22 @@ sync.pull = async () => {
         state.snapshot = remoteSnap;
         state.saveSnapshotToStorage(remoteSnap);
         if (sha) localStorage.setItem(SNAPSHOT_SHA_KEY, sha);
+        snapshotChanged = true;
       }
     } catch (e) {
       state.addSyncLog(`⚠ Snapshot fetch failed: ${e.message}`);
     }
   }
-  return _pull();
+  const result = await _pull();
+  // On success, _pull calls onOpsMerged which invalidates + re-renders. On
+  // the 404-empty-ops path it returns early, so if we also just updated the
+  // snapshot we need to refresh the UI ourselves — otherwise the pre-pull
+  // materialized cache (computed against a stale/null snapshot) lingers and
+  // the app looks empty even though state.snapshot holds the data.
+  if (snapshotChanged && result && result.initialized === false) {
+    onOpsMerged(state.localOps);
+  }
+  return result;
 };
 
 // ── Compaction ───────────────────────────────────────────────────────────
