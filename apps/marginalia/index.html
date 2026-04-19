@@ -3036,12 +3036,19 @@ sync.pull = async () => {
   let snapshotChanged = false;
   if (settings) {
     try {
+      state.addSyncLog('↻ Fetching snapshot…');
       const { snapshot: remoteSnap, sha } = await fetchSnapshot(settings);
       if (remoteSnap) {
         state.snapshot = remoteSnap;
         state.saveSnapshotToStorage(remoteSnap);
         if (sha) localStorage.setItem(SNAPSHOT_SHA_KEY, sha);
         snapshotChanged = true;
+        const liveKeys = Object.keys(remoteSnap.live || {});
+        const books = liveKeys.filter(k => k.startsWith('b_')).length;
+        const entries = liveKeys.filter(k => k.startsWith('e_')).length;
+        state.addSyncLog(`✓ Snapshot loaded (${books} books, ${entries} entries)`);
+      } else {
+        state.addSyncLog('↳ No remote snapshot');
       }
     } catch (e) {
       state.addSyncLog(`⚠ Snapshot fetch failed: ${e.message}`);
