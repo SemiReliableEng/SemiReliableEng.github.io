@@ -1389,6 +1389,8 @@
         <div class="settings-card">
           <div class="settings-hint">Disconnect GitHub sync. Your local data is not affected.</div>
           <button class="btn-danger" onclick="disconnectGitHub()">Disconnect GitHub</button>
+          <div class="settings-hint" style="margin-top:16px">Force update: unregister the service worker and drop all cached assets, then reload. Use this if the version line above shows a stale SW or a deploy isn't picking up on this device. Your books, quotes, and GitHub settings are kept.</div>
+          <button class="btn-danger" onclick="forceUpdate()" style="margin-top:8px">Force Update</button>
         </div>
       </div>
 
@@ -1517,7 +1519,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v24';
+const APP_VERSION = 'marginalia-v25';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -3284,6 +3286,29 @@ window.disconnectGitHub = () => {
   state.updateSettingsFields();
   state.addSyncLog('Disconnected from GitHub');
   globalThis.showToast?.('GitHub disconnected');
+};
+
+// Unregister the SW and clear every cache, then reload. localStorage is
+// untouched, so books/quotes/sync settings survive. For when a mobile PWA
+// refuses to pick up a deploy and version-line shows a stale SW.
+window.forceUpdate = async () => {
+  if (!confirm('Force update? The app will reload and re-download assets. Your data is kept.')) return;
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  } catch (e) {
+    state.addSyncLog(`⚠ Force update error: ${e.message}`);
+  } finally {
+    // Bypass HTTP cache too — Android Chrome can still serve index.html from
+    // the memory cache after SW is gone.
+    location.reload();
+  }
 };
 
 window.syncNow = async () => { await sync.syncNow(); await maybeCompact(); };
