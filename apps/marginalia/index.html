@@ -3215,6 +3215,7 @@ window.saveGitHubSettings = async () => {
     localStorage.removeItem('marginalia_device_ops_sha');
     localStorage.removeItem(SNAPSHOT_SHA_KEY);
     await sync.pull();
+    await seedSnapshotIfNeeded();
     await sync.pushNow();
     msg.textContent = '✓ Connected and synced!';
   } catch (e) {
@@ -3238,12 +3239,37 @@ window.disconnectGitHub = () => {
 window.syncNow = async () => { await sync.syncNow(); await maybeCompact(); };
 window.syncPull = async () => { await sync.pull(); };
 
+// Seed our local snapshot to remote when the remote lacks one. Needed after
+// a repo switch (old repo's snapshot holds the materialized state; without
+// this step it never crosses over to the new repo and getDeviceOps()
+// returns only the post-compaction tail, which can be empty). Safe as a
+// post-pull step anywhere: a no-op when remote already has a snapshot, and
+// idempotent — we only PUT when SNAPSHOT_SHA_KEY is absent.
+async function seedSnapshotIfNeeded() {
+  const settings = getSettings();
+  if (!settings) return;
+  if (!state.snapshot) return;
+  if (localStorage.getItem(SNAPSHOT_SHA_KEY)) return;
+  state.addSyncLog('↳ Seeding local snapshot to remote…');
+  const result = await putSnapshot(
+    settings, state.snapshot, null,
+    `apps/${APP_NAME}/snapshot.json: seed`,
+  );
+  if (result.status === 'ok' && result.sha) {
+    localStorage.setItem(SNAPSHOT_SHA_KEY, result.sha);
+    state.addSyncLog('✓ Snapshot seeded');
+  } else {
+    state.addSyncLog(`✗ Snapshot seed failed: ${result.code || result.status}`);
+  }
+}
+
 globalThis.marginaliaSync = sync;
 
 // ── Boot: pull on load, opportunistic compaction, visibilitychange refresh.
 if (getSettings()) {
   (async () => {
     await sync.pull();
+    await seedSnapshotIfNeeded();
     if (getDeviceOps().length) await sync.pushNow();
     await maybeCompact();
   })().catch(() => {});
