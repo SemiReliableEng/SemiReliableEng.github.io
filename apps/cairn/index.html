@@ -437,9 +437,36 @@ function loadOps() {
     if (!Array.isArray(ops)) ops = [];
   } catch { ops = []; }
 }
+// Drop redundant ops before persisting so localStorage doesn't blow past its
+// ~5–10MB quota when several devices have imported the same GPX corpus.
+// add-hike/delete-hike are idempotent per entityId: materializeInto only needs
+// one of each, so foreign duplicates are safe to shed. We always keep our own
+// ops because push reads them straight off `ops` (filtered by deviceId).
+// update-hike carries device-specific edits and is preserved verbatim.
+function minimalOpsForStorage() {
+  const keptAddDel = new Map(); // `${op}:${entityId}` → chosen op
+  const rest = [];
+  for (const op of ops) {
+    if (op.op === 'add-hike' || op.op === 'delete-hike') {
+      const key = `${op.op}:${op.entityId}`;
+      const existing = keptAddDel.get(key);
+      const prefer =
+        !existing ||
+        (op.deviceId === deviceId && existing.deviceId !== deviceId);
+      if (prefer) keptAddDel.set(key, op);
+      continue;
+    }
+    rest.push(op);
+  }
+  return [...keptAddDel.values(), ...rest];
+}
+
 function saveOps() {
-  try { localStorage.setItem(OPS_KEY, JSON.stringify(ops)); }
-  catch(e) { console.warn('localStorage full?', e); }
+  try {
+    localStorage.setItem(OPS_KEY, JSON.stringify(minimalOpsForStorage()));
+  } catch (e) {
+    console.warn('localStorage full?', e);
+  }
 }
 
 // Compact the local op log in place: drop ops this device authored whose
@@ -1147,6 +1174,15 @@ window.cairnCompactLocalOps = compactLocalOps;
     lastAutoPull = Date.now();
     sync.pull().catch(() => {});
   });
+</script>
+
+<script>
+  // PWA offline support. Only runs on http(s); file:// has no SW.
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    });
+  }
 </script>
 
 </body>
