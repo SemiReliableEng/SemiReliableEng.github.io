@@ -1322,7 +1322,7 @@
         <div class="settings-section-title">GitHub Sync</div>
         <div class="settings-card">
           <div class="settings-hint">
-            Sync your data to a private GitHub repository. Create a repo named <strong>book-quotes</strong> and a Personal Access Token with <strong>repo</strong> scope at
+            Sync your data to a private GitHub repository. Create a repo named <strong>personal-data</strong> and a Personal Access Token with <strong>repo</strong> scope at
             <a href="https://github.com/settings/tokens" target="_blank">github.com/settings/tokens</a>.
           </div>
           <div class="field-group">
@@ -1331,7 +1331,7 @@
           </div>
           <div class="field-group">
             <div class="field-label">Repository Name</div>
-            <input class="text-input" id="gh-repo" type="text" placeholder="book-quotes" autocorrect="off" autocapitalize="off" spellcheck="false">
+            <input class="text-input" id="gh-repo" type="text" placeholder="personal-data" autocorrect="off" autocapitalize="off" spellcheck="false">
           </div>
           <div class="field-group">
             <div class="field-label">Personal Access Token</div>
@@ -1352,17 +1352,6 @@
             <button class="btn-secondary" onclick="syncNow()" style="flex:1">Sync Now</button>
             <button class="btn-secondary" onclick="syncPull()" style="flex:1">Pull from GitHub</button>
           </div>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-section-title">Data Management</div>
-        <div class="settings-card">
-          <div class="settings-hint">Compact the op log into a single snapshot. Reduces sync overhead and cleans up old operation files. All devices sync to the compacted state automatically.</div>
-          <div class="settings-row" id="compact-info-row" style="display:none">
-            <div class="settings-hint" id="compact-stats"></div>
-          </div>
-          <button class="btn-secondary" onclick="compactOps()">Compact Op Log</button>
         </div>
       </div>
 
@@ -1525,6 +1514,11 @@
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
 const LAST_ACCESSED_KEY = 'marginalia_last_accessed';
+const SNAPSHOT_LS_KEY = 'marginalia_snapshot';
+// Snapshot SHA, compaction slot, last-compaction timestamp, and the
+// one-time SHA-migration flag all live in localStorage; their keys are
+// declared inside the module block at the bottom of this file, where they
+// are the only code that touches them.
 
 function localStorageAvailable() {
   try { localStorage.setItem('_test', '1'); localStorage.removeItem('_test'); return true; }
@@ -1545,9 +1539,13 @@ const DEVICE_ID = getDeviceId();
 let opSeq = 0;
 
 // ── Op storage ──────────────────────────────────────
-let localOps = [];   // all ops from all devices
-let deviceOps = [];  // ops from THIS device only
+let localOps = [];   // merged ops from all devices (minus those covered by snapshot)
+let deviceOps = [];  // ops from THIS device only (derived)
 let materializedCache = null;
+
+// Snapshot shape: { version: 1, lastCompactedTs: ms, live: { eid: state }, tombstones: { eid: deletedTs } }.
+// Null until the first pull or compaction writes one. See module CLAUDE.md section "Sync policy".
+let snapshot = null;
 
 function loadOpsFromStorage() {
   try {
@@ -1558,6 +1556,31 @@ function loadOpsFromStorage() {
 
 function saveOpsToStorage() {
   if (USE_LS) { try { localStorage.setItem(OPS_LS_KEY, JSON.stringify(localOps)); } catch {} }
+}
+
+function loadSnapshotFromStorage() {
+  try {
+    if (USE_LS) return JSON.parse(localStorage.getItem(SNAPSHOT_LS_KEY)) || null;
+    return null;
+  } catch { return null; }
+}
+
+function saveSnapshotToStorage(snap) {
+  if (!USE_LS) return;
+  try {
+    if (snap) localStorage.setItem(SNAPSHOT_LS_KEY, JSON.stringify(snap));
+    else localStorage.removeItem(SNAPSHOT_LS_KEY);
+  } catch {}
+}
+
+// An op is covered by the snapshot iff its effect is already applied. Marginalia
+// mints fresh entityIds on every add (b_${Date.now()}, e_${Date.now()}), so no
+// entityId ever maps to two different live states; the simple timestamp rule
+// below is safe. Cairn needs a different check at port time because its IDs
+// are content-addressed and the same entity can resurrect.
+function isOpCoveredBySnapshot(op, snap) {
+  if (!snap) return false;
+  return op.ts <= snap.lastCompactedTs;
 }
 
 // ── Last-accessed map (local-only, never synced) ────
@@ -1573,10 +1596,21 @@ function saveLastAccessed(map) {
 let lastAccessedMap = loadLastAccessed();
 
 // ── Materialize ops into current state ──────────────
-function materialize(ops) {
-  const sorted = [...ops].sort((a, b) => a.ts - b.ts || a.opId.localeCompare(b.opId));
+// Seeded from the snapshot's `live` map (entities whose ops were compacted
+// away), then ops replay on top. Tombstones in the snapshot are the "deleted"
+// marker for those entities so they can't be resurrected by an ops-only reader
+// that has a stale view (and support cairn's content-addressed resurrection
+// case when this pattern ports).
+function materialize(ops, snap) {
   const books = {};
   const entries = {};
+  if (snap && snap.live) {
+    for (const [eid, state] of Object.entries(snap.live)) {
+      if (eid.startsWith('b_')) books[eid] = { id: eid, ...state };
+      else if (eid.startsWith('e_')) entries[eid] = { id: eid, ...state };
+    }
+  }
+  const sorted = [...ops].sort((a, b) => a.ts - b.ts || a.opId.localeCompare(b.opId));
   for (const op of sorted) {
     switch (op.op) {
       case 'add-book':
@@ -1607,7 +1641,7 @@ function materialize(ops) {
 
 function loadData() {
   if (!materializedCache) {
-    materializedCache = materialize(localOps);
+    materializedCache = materialize(localOps, snapshot);
   }
   // Overlay local-only lastAccessed
   for (const book of materializedCache.books) {
@@ -1662,6 +1696,12 @@ function setLastAccessed(bookId) {
 // STATE
 // ═══════════════════════════════════════════════
 localOps = loadOpsFromStorage();
+snapshot = loadSnapshotFromStorage();
+// Any ops covered by the snapshot are redundant — the snapshot already has
+// their outcome baked in. Drop them eagerly.
+if (snapshot) {
+  localOps = localOps.filter(op => !isOpCoveredBySnapshot(op, snapshot));
+}
 deviceOps = localOps.filter(op => op.deviceId === DEVICE_ID);
 let db = loadData();
 let currentBookId = null;
@@ -2505,11 +2545,12 @@ function showToast(msg) {
 
 
 
+// GitHub sync state — SHAs and the network layer live in
+// shared/personal-sync.mjs (see module glue at the bottom of this file). What
+// stays here is the tiny pile of DOM-facing helpers that the module's 'log'
+// and 'status' events plug into.
 const GH_SETTINGS_KEY = 'marginalia_gh_settings';
-const DEVICE_OPS_SHA_KEY = 'marginalia_device_ops_sha';
-let deviceOpsSha = USE_LS ? localStorage.getItem(DEVICE_OPS_SHA_KEY) : null;
 let syncLogLines = [];
-let walVerified = false; // set true after initSync confirms ops/ exists
 
 function loadGHSettings() {
   try { return JSON.parse(localStorage.getItem(GH_SETTINGS_KEY)) || {}; }
@@ -2538,381 +2579,13 @@ function setSyncStatus(state, label) {
   lbl.textContent = label;
 }
 
-async function ghRequest(method, path, body) {
-  const s = loadGHSettings();
-  const url = `https://api.github.com/repos/${s.username}/${s.repo}/contents/${path}`;
-  const opts = {
-    method,
-    headers: {
-      'Authorization': `token ${s.token}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/vnd.github.v3+json'
-    }
-  };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(url, opts);
-  return { ok: res.ok, status: res.status, data: await res.json() };
-}
-
-// ── WAL Sync: Push this device's ops ────────────────
-async function syncPush() {
-  if (!ghConfigured()) return;
-  if (!deviceOps.length) return;
-  setSyncStatus('syncing', '⟳ syncing');
-  try {
-    const content = btoa(unescape(encodeURIComponent(JSON.stringify(deviceOps, null, 2))));
-    const body = {
-      message: `ops/${DEVICE_ID}: ${new Date().toISOString().substring(0, 16).replace('T', ' ')}`,
-      content,
-      ...(deviceOpsSha ? { sha: deviceOpsSha } : {})
-    };
-    const res = await ghRequest('PUT', `ops/${DEVICE_ID}.json`, body);
-    if (res.ok) {
-      deviceOpsSha = res.data.content.sha;
-      if (USE_LS) localStorage.setItem(DEVICE_OPS_SHA_KEY, deviceOpsSha);
-      setSyncStatus('ok', '✓ synced');
-      addSyncLog('✓ Pushed ops to GitHub');
-    } else if (res.status === 409) {
-      // SHA mismatch — re-fetch our file's SHA and retry
-      addSyncLog('⚠ SHA conflict on push, re-fetching…');
-      const latest = await ghRequest('GET', `ops/${DEVICE_ID}.json`);
-      if (latest.ok) {
-        deviceOpsSha = latest.data.sha;
-        if (USE_LS) localStorage.setItem(DEVICE_OPS_SHA_KEY, deviceOpsSha);
-      }
-      // Retry once
-      const content2 = btoa(unescape(encodeURIComponent(JSON.stringify(deviceOps, null, 2))));
-      const body2 = {
-        message: `ops/${DEVICE_ID}: ${new Date().toISOString().substring(0, 16).replace('T', ' ')}`,
-        content: content2,
-        ...(deviceOpsSha ? { sha: deviceOpsSha } : {})
-      };
-      const res2 = await ghRequest('PUT', `ops/${DEVICE_ID}.json`, body2);
-      if (res2.ok) {
-        deviceOpsSha = res2.data.content.sha;
-        if (USE_LS) localStorage.setItem(DEVICE_OPS_SHA_KEY, deviceOpsSha);
-        setSyncStatus('ok', '✓ synced');
-        addSyncLog('✓ Pushed ops (retry)');
-      } else {
-        setSyncStatus('error', '✗ error');
-        addSyncLog(`✗ Push retry failed: ${res2.data.message || res2.status}`);
-      }
-    } else if (res.status === 422) {
-      // File doesn't exist yet and no SHA needed — sometimes GitHub returns 422 on first create
-      // Try without SHA
-      const body3 = {
-        message: `ops/${DEVICE_ID}: ${new Date().toISOString().substring(0, 16).replace('T', ' ')}`,
-        content
-      };
-      const res3 = await ghRequest('PUT', `ops/${DEVICE_ID}.json`, body3);
-      if (res3.ok) {
-        deviceOpsSha = res3.data.content.sha;
-        if (USE_LS) localStorage.setItem(DEVICE_OPS_SHA_KEY, deviceOpsSha);
-        setSyncStatus('ok', '✓ synced');
-        addSyncLog('✓ Pushed ops (created)');
-      } else {
-        setSyncStatus('error', '✗ error');
-        addSyncLog(`✗ Push failed: ${res3.data.message || res3.status}`);
-      }
-    } else {
-      setSyncStatus('error', '✗ error');
-      addSyncLog(`✗ Push failed: ${res.data.message || res.status}`);
-    }
-  } catch(e) {
-    setSyncStatus('error', '✗ offline');
-    addSyncLog(`✗ Push error: ${e.message}`);
-  }
-}
-
-// ── WAL Sync: Pull all devices' ops ─────────────────
-async function syncPull(silent) {
-  if (!ghConfigured()) return;
-  if (!silent) setSyncStatus('syncing', '⟳ pulling');
-  try {
-    // List ops/ directory
-    const dirRes = await ghRequest('GET', 'ops');
-    if (!dirRes.ok) {
-      if (dirRes.status === 404) {
-        if (!silent) {
-          setSyncStatus('error', '✗ no WAL');
-          addSyncLog('✗ ops/ directory not found. Run migration first.');
-          showToast('WAL data not found. Run the migration tool first.');
-        }
-        return false;
-      }
-      if (!silent) {
-        setSyncStatus('error', '✗ error');
-        addSyncLog(`✗ Pull failed: ${dirRes.data.message || dirRes.status}`);
-      }
-      return false;
-    }
-
-    walVerified = true;
-    const opFiles = dirRes.data.filter(f => f.name.endsWith('.json'));
-    addSyncLog(`Found ${opFiles.length} file(s)`);
-
-    // If our device file was deleted (e.g. by compaction), clear stale SHA
-    if (!opFiles.find(f => f.name === `${DEVICE_ID}.json`)) {
-      deviceOpsSha = null;
-      if (USE_LS) localStorage.removeItem(DEVICE_OPS_SHA_KEY);
-    }
-
-    // Fetch all op files in parallel
-    const fetches = opFiles.map(async (f) => {
-      const res = await ghRequest('GET', `ops/${f.name}`);
-      if (!res.ok) return [];
-      if (f.name === `${DEVICE_ID}.json`) {
-        deviceOpsSha = res.data.sha;
-        if (USE_LS) localStorage.setItem(DEVICE_OPS_SHA_KEY, deviceOpsSha);
-      }
-      const content = JSON.parse(decodeURIComponent(escape(atob(res.data.content.replace(/\n/g, '')))));
-      return Array.isArray(content) ? content : [];
-    });
-
-    const allArrays = await Promise.all(fetches);
-    let allOps = allArrays.flat();
-
-    // Check for compaction marker
-    const compactionMarker = allOps.find(op => op.op === 'compaction');
-    const compactedAt = compactionMarker ? compactionMarker.data.compactedAt : null;
-    if (compactedAt) {
-      allOps = allOps.filter(op => op.deviceId === 'compacted' || op.ts > compactedAt);
-    }
-
-    // Dedupe by opId
-    const seen = new Set();
-    allOps = allOps.filter(op => {
-      if (seen.has(op.opId)) return false;
-      seen.add(op.opId);
-      return true;
-    });
-
-    // Merge with local ops not yet on remote
-    const remoteOpIds = new Set(allOps.map(op => op.opId));
-    for (const op of localOps) {
-      if (!remoteOpIds.has(op.opId)) {
-        if (compactedAt && op.ts <= compactedAt && op.deviceId !== 'compacted') continue;
-        allOps.push(op);
-      }
-    }
-
-    localOps = allOps;
-    deviceOps = localOps.filter(op => op.deviceId === DEVICE_ID);
-    materializedCache = null;
-    saveOpsToStorage();
-    db = loadData();
-
-    if (!silent) {
-      setSyncStatus('ok', '✓ synced');
-      addSyncLog(`✓ Pulled ${allOps.length} ops from ${allFiles.length} file(s)`);
-      renderShelf();
-      showToast('Data pulled from GitHub');
-    } else {
-      setSyncStatus('ok', '✓ synced');
-      addSyncLog('✓ Pulled latest ops');
-    }
-    return true;
-  } catch(e) {
-    if (!silent) {
-      setSyncStatus('error', '✗ offline');
-      addSyncLog(`✗ Pull error: ${e.message}`);
-    }
-    return false;
-  }
-}
-
-async function syncNow() {
-  await syncPull(false);
-  await syncPush();
-}
-
-// ── WAL Compaction ─────────────────────────────────
-async function compactOps() {
-  if (!ghConfigured()) { showToast('GitHub not configured'); return; }
-  if (!confirm('Compact the op log? This replaces all op files with a single snapshot. Other devices will sync to the compacted state automatically.')) return;
-
-  setSyncStatus('syncing', '⟳ compacting');
-  addSyncLog('Starting compaction…');
-
-  try {
-    // 1. Pull latest from all devices
-    await syncPull(true);
-
-    // 2. Materialize current state
-    const state = materialize(localOps);
-    const compactedAt = Date.now();
-
-    // 3. Build compacted ops array (marker + synthetic add ops)
-    const compactedOps = [];
-    let seq = 0;
-    // Compaction marker — tells syncPull to drop pre-compaction ops
-    compactedOps.push({
-      opId: `compacted_${String(compactedAt).padStart(13, '0')}_marker`,
-      op: 'compaction',
-      entityId: '',
-      data: { compactedAt },
-      ts: compactedAt,
-      deviceId: 'compacted'
-    });
-    for (const book of state.books) {
-      const { id, lastAccessed, ...fields } = book;
-      compactedOps.push({
-        opId: `compacted_${String(compactedAt).padStart(13, '0')}_${String(seq++).padStart(4, '0')}`,
-        op: 'add-book',
-        entityId: id,
-        data: fields,
-        ts: compactedAt,
-        deviceId: 'compacted'
-      });
-    }
-    for (const entry of state.entries) {
-      const { id, ...fields } = entry;
-      compactedOps.push({
-        opId: `compacted_${String(compactedAt).padStart(13, '0')}_${String(seq++).padStart(4, '0')}`,
-        op: 'add-entry',
-        entityId: id,
-        data: fields,
-        ts: compactedAt,
-        deviceId: 'compacted'
-      });
-    }
-
-    // 4. Get current ops/ directory listing for SHAs
-    const dirRes = await ghRequest('GET', 'ops');
-    if (!dirRes.ok) throw new Error(`Failed to list ops/: ${dirRes.status}`);
-    const files = dirRes.data.filter(f => f.name.endsWith('.json'));
-    const migrationFile = files.find(f => f.name === 'migration.json');
-    if (!migrationFile) throw new Error('ops/migration.json not found — nothing to compact into');
-
-    // 5. Overwrite migration.json with compacted ops
-    const content = btoa(unescape(encodeURIComponent(JSON.stringify(compactedOps, null, 2))));
-    const writeRes = await ghRequest('PUT', 'ops/migration.json', {
-      message: `compaction: ${state.books.length} books, ${state.entries.length} entries`,
-      content,
-      sha: migrationFile.sha
-    });
-    if (!writeRes.ok) throw new Error(`Failed to write migration.json: ${writeRes.status} ${writeRes.data?.message || ''}`);
-    addSyncLog('✓ Wrote compacted ops to migration.json');
-
-    // 6. Update snapshot.json
-    const snapBooks = state.books.map(b => { const { lastAccessed, ...rest } = b; return rest; });
-    const snapshot = { books: snapBooks, entries: state.entries };
-    const existingSnap = await ghRequest('GET', 'snapshot.json');
-    const snapSha = existingSnap.ok ? existingSnap.data.sha : null;
-    const snapContent = btoa(unescape(encodeURIComponent(JSON.stringify(snapshot, null, 2))));
-    const snapRes = await ghRequest('PUT', 'snapshot.json', {
-      message: 'compaction: update snapshot',
-      content: snapContent,
-      ...(snapSha ? { sha: snapSha } : {})
-    });
-    if (snapRes.ok) addSyncLog('✓ Updated snapshot.json');
-
-    // 7. Delete device op files (keep migration.json)
-    for (const f of files) {
-      if (f.name === 'migration.json' || !f.name.endsWith('.json')) continue;
-      const delRes = await ghRequest('DELETE', `ops/${f.name}`, {
-        message: `compaction: remove ${f.name}`,
-        sha: f.sha
-      });
-      if (delRes.ok) addSyncLog(`Deleted ops/${f.name}`);
-    }
-
-    // 8. Update local state
-    localOps = compactedOps;
-    deviceOps = [];
-    deviceOpsSha = null;
-    if (USE_LS) localStorage.removeItem(DEVICE_OPS_SHA_KEY);
-    materializedCache = null;
-    saveOpsToStorage();
-    db = loadData();
-
-    setSyncStatus('ok', '✓ compacted');
-    addSyncLog(`✓ Compacted: ${state.books.length} books, ${state.entries.length} entries`);
-    showToast('Op log compacted');
-    renderShelf();
-    updateCompactInfo();
-
-  } catch(e) {
-    setSyncStatus('error', '✗ error');
-    addSyncLog(`✗ Compaction failed: ${e.message}`);
-    showToast('Compaction failed — see sync log');
-  }
-}
-
-function updateCompactInfo() {
-  const el = document.getElementById('compact-stats');
-  if (!el) return;
-  const opCount = localOps.length;
-  const isCompacted = localOps.some(op => op.deviceId === 'compacted');
-  const devices = new Set(localOps.map(op => op.deviceId));
-  el.textContent = `${opCount} ops across ${devices.size} source(s)${isCompacted ? ' (compacted)' : ''}`;
-  el.parentElement.style.display = '';
-}
-
-async function saveGitHubSettings() {
-  const username = document.getElementById('gh-username').value.trim();
-  const repo = document.getElementById('gh-repo').value.trim() || 'book-quotes';
-  const token = document.getElementById('gh-token').value.trim();
-  if (!username || !token) { showToast('Please fill in username and token'); return; }
-  saveGHSettings({ username, repo, token });
-
-  const row = document.getElementById('gh-status-row');
-  const msg = document.getElementById('gh-status-msg');
-  row.style.display = 'flex';
-  msg.textContent = 'Testing connection…';
-  addSyncLog('Testing GitHub connection…');
-
-  try {
-    const s = loadGHSettings();
-    const res = await fetch(`https://api.github.com/repos/${s.username}/${s.repo}`, {
-      headers: { 'Authorization': `token ${s.token}`, 'Accept': 'application/vnd.github.v3+json' }
-    });
-    if (res.ok) {
-      msg.textContent = '✓ Connected! Performing initial sync…';
-      addSyncLog(`✓ Connected to ${s.username}/${s.repo}`);
-      updateSettingsFields();
-      const pulled = await syncPull(true);
-      if (!pulled) {
-        msg.textContent = '✗ WAL data not found. Run the migration tool first.';
-        setSyncStatus('error', '✗ no WAL');
-        return;
-      }
-      if (deviceOps.length) await syncPush();
-      msg.textContent = '✓ Connected and synced!';
-      setSyncStatus('ok', '✓ synced');
-      renderShelf();
-    } else {
-      const err = await res.json();
-      msg.textContent = `✗ Error: ${err.message}`;
-      addSyncLog(`✗ Connection failed: ${err.message}`);
-      setSyncStatus('error', '✗ error');
-    }
-  } catch(e) {
-    msg.textContent = `✗ Network error: ${e.message}`;
-    addSyncLog(`✗ Network error: ${e.message}`);
-    setSyncStatus('error', '✗ offline');
-  }
-}
-
-function disconnectGitHub() {
-  if (!confirm('Disconnect GitHub sync? Your local data will not be affected.')) return;
-  localStorage.removeItem(GH_SETTINGS_KEY);
-  localStorage.removeItem(DEVICE_OPS_SHA_KEY);
-  deviceOpsSha = null;
-  walVerified = false;
-  setSyncStatus('', 'local');
-  updateSettingsFields();
-  addSyncLog('Disconnected from GitHub');
-  showToast('GitHub disconnected');
-}
-
 function updateSettingsFields() {
   const s = loadGHSettings();
   const u = document.getElementById('gh-username');
   const r = document.getElementById('gh-repo');
   const t = document.getElementById('gh-token');
   if (u) u.value = s.username || '';
-  if (r) r.value = s.repo || 'book-quotes';
+  if (r) r.value = s.repo || 'personal-data';
   if (t) t.value = s.token || '';
   // OCR settings
   const eng = document.getElementById('ocr-engine');
@@ -2923,7 +2596,6 @@ function updateSettingsFields() {
   if (gk) gk.value = loadGeminiKey() || '';
   const forgetBtn = document.getElementById('btn-forget-gemini');
   if (forgetBtn) forgetBtn.style.display = loadGeminiKey() ? '' : 'none';
-  updateCompactInfo();
 }
 
 // ── Gemini OCR ──
@@ -3111,27 +2783,13 @@ async function processOCR(file) {
   }
 }
 
-// Auto-sync after every applyOp
-let syncDebounceTimer = null;
+// Auto-sync after every applyOp. The module's schedulePush is installed as
+// window.marginaliaSync once the module block at the bottom of this file
+// finishes loading. Until then (early boot), calls here are no-ops — safe,
+// because the module's own boot code will pull + push once it's ready.
 function scheduleSyncPush() {
-  if (!ghConfigured()) return;
-  clearTimeout(syncDebounceTimer);
-  syncDebounceTimer = setTimeout(() => syncPush(), 1500);
-}
-
-// Init sync on load
-async function initSync() {
-  updateSettingsFields();
-  if (ghConfigured()) {
-    setSyncStatus('syncing', '⟳ syncing');
-    const pulled = await syncPull(true);
-    if (!pulled && !localOps.length) {
-      setSyncStatus('error', '✗ no WAL');
-      addSyncLog('✗ WAL data not found. Run the migration tool first.');
-    }
-    renderShelf();
-    if (deviceOps.length) await syncPush();
-  }
+  const s = globalThis.marginaliaSync;
+  if (s) s.schedulePush();
 }
 
 
@@ -3201,7 +2859,31 @@ desktopMQ.addEventListener('change', (e) => {
   }
 });
 
-initSync();
+// Show first paint from whatever localOps + snapshot we already have; the
+// module block below fires off the boot pull independently.
+updateSettingsFields();
+
+// Expose the bits the module glue reads/writes.
+globalThis.marginaliaState = {
+  get localOps() { return localOps; },
+  set localOps(v) { localOps = v; },
+  get deviceOps() { return deviceOps; },
+  set deviceOps(v) { deviceOps = v; },
+  get snapshot() { return snapshot; },
+  set snapshot(v) { snapshot = v; },
+  invalidateMaterialized() { materializedCache = null; },
+  reloadDb() { db = loadData(); },
+  DEVICE_ID,
+  isOpCoveredBySnapshot,
+  saveOpsToStorage,
+  saveSnapshotToStorage,
+  loadGHSettings,
+  saveGHSettings,
+  addSyncLog,
+  setSyncStatus,
+  renderShelf,
+  updateSettingsFields,
+};
 
 // ── Service Worker registration ──────────────────
 if ('serviceWorker' in navigator) {
@@ -3210,5 +2892,372 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
+
+<!-- ══ SYNC MODULE GLUE ══════════════════════════════════════════════ -->
+<script type="module">
+import { PersonalSync } from './shared/personal-sync.mjs';
+
+const APP_NAME = 'marginalia';
+const SHA_MIGRATED_KEY = 'marginalia_sha_migrated_v2';
+const SNAPSHOT_SHA_KEY = 'marginalia_snapshot_sha';
+const COMPACT_SLOT_KEY = 'marginalia_compaction_slot';
+const LAST_COMPACTION_KEY = 'marginalia_last_compaction_at';
+
+// Grace window: ops within this many ms of now are NOT absorbed into the
+// snapshot during compaction. Prevents dropping a freshly-created op from
+// another device whose push is still in flight.
+const COMPACT_GRACE_MS = 5 * 60 * 1000;
+// Minimum between successful compactions. Combined with a per-device random
+// weekly slot (below) to spread compaction timing across devices.
+const COMPACT_MIN_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+// Minimum number of absorb-eligible ops to bother running a compaction.
+const COMPACT_MIN_OPS = 10;
+
+const state = globalThis.marginaliaState;
+if (!state) throw new Error('marginaliaState not initialized');
+
+// One-time clear: pre-migration SHA pointed at top-level ops/<id>.json, now
+// the module writes apps/marginalia/ops/<id>.json. The module would self-heal
+// via the 422 fallback, but clearing up front avoids the extra round-trip.
+if (!localStorage.getItem(SHA_MIGRATED_KEY)) {
+  localStorage.removeItem('marginalia_device_ops_sha');
+  localStorage.setItem(SHA_MIGRATED_KEY, '1');
+}
+
+function getSettings() {
+  const s = state.loadGHSettings();
+  if (!s.username || !s.repo || !s.token) return null;
+  return s;
+}
+
+// getDeviceOps feeds the module's push: strictly this device's ops, minus
+// any already covered by the snapshot. Foreign ops stay in our in-memory log
+// for materialization but never get written under our device filename — that
+// keeps per-device files honest even after a pull has merged everyone's ops
+// into localOps.
+function getDeviceOps() {
+  const snap = state.snapshot;
+  return state.localOps.filter(op =>
+    op.deviceId === state.DEVICE_ID && !state.isOpCoveredBySnapshot(op, snap)
+  );
+}
+
+function onOpsMerged(allOps) {
+  const snap = state.snapshot;
+  const filtered = snap ? allOps.filter(op => !state.isOpCoveredBySnapshot(op, snap)) : allOps;
+  state.localOps = filtered;
+  state.deviceOps = filtered.filter(op => op.deviceId === state.DEVICE_ID);
+  state.invalidateMaterialized();
+  state.saveOpsToStorage();
+  state.reloadDb();
+  state.renderShelf();
+}
+
+const sync = PersonalSync.create({
+  appName: APP_NAME,
+  deviceId: state.DEVICE_ID,
+  getSettings,
+  getDeviceOps,
+  onOpsMerged,
+});
+sync.on('log', state.addSyncLog);
+sync.on('status', state.setSyncStatus);
+
+state.setSyncStatus('', getSettings() ? 'idle' : 'local');
+
+// ── Snapshot IO (app-layer; the module is ops-only in v1) ────────────────
+// Path is hard-coded under apps/marginalia/ so it inherits the same
+// isolation the module enforces for ops. If/when this pattern stabilizes
+// for cairn too, it's a candidate for extraction into personal-sync.mjs.
+const SNAPSHOT_REL = 'snapshot.json';
+
+function snapshotUrl(settings) {
+  return `https://api.github.com/repos/${settings.username}/${settings.repo}/contents/apps/${APP_NAME}/${SNAPSHOT_REL}`;
+}
+
+function ghHeaders(token) {
+  return {
+    'Authorization': `token ${token}`,
+    'Content-Type': 'application/json',
+    'Accept': 'application/vnd.github.v3+json',
+  };
+}
+
+function b64encode(str) { return btoa(unescape(encodeURIComponent(str))); }
+function b64decode(b64) { return decodeURIComponent(escape(atob(String(b64).replace(/\n/g, '')))); }
+
+async function fetchSnapshot(settings) {
+  const res = await fetch(snapshotUrl(settings), { headers: ghHeaders(settings.token) });
+  if (res.status === 404) return { snapshot: null, sha: null };
+  if (!res.ok) throw new Error(`snapshot GET ${res.status}`);
+  const data = await res.json();
+  let b64 = data?.content;
+  // Contents API returns empty content for files >1MB. Fall back to git blob API.
+  if (!b64 && data?.sha) {
+    const blobRes = await fetch(
+      `https://api.github.com/repos/${settings.username}/${settings.repo}/git/blobs/${data.sha}`,
+      { headers: ghHeaders(settings.token) }
+    );
+    if (blobRes.ok) {
+      const blobData = await blobRes.json();
+      if (blobData?.encoding === 'base64') b64 = blobData.content;
+    }
+  }
+  if (!b64) return { snapshot: null, sha: data?.sha || null };
+  const parsed = JSON.parse(b64decode(b64));
+  return { snapshot: parsed, sha: data.sha };
+}
+
+async function putSnapshot(settings, snap, sha, message) {
+  const body = {
+    message: message || `apps/${APP_NAME}/snapshot.json: compaction`,
+    content: b64encode(JSON.stringify(snap, null, 2)),
+    ...(sha ? { sha } : {}),
+  };
+  const res = await fetch(snapshotUrl(settings), {
+    method: 'PUT',
+    headers: ghHeaders(settings.token),
+    body: JSON.stringify(body),
+  });
+  if (res.status === 409 || res.status === 422) return { status: 'conflict' };
+  if (!res.ok) return { status: 'error', code: res.status };
+  const data = await res.json();
+  return { status: 'ok', sha: data?.content?.sha };
+}
+
+// ── Pull wrapper: refresh snapshot alongside ops ─────────────────────────
+// The module's pull() handles ops/. We want snapshot.json refreshed at the
+// same time, and we want it done BEFORE the module calls onOpsMerged (so the
+// filter-covered-ops pass uses the latest snapshot). Simplest: refresh
+// snapshot first, then call the underlying pull.
+const _pull = sync.pull.bind(sync);
+sync.pull = async () => {
+  const settings = getSettings();
+  if (settings) {
+    try {
+      const { snapshot: remoteSnap, sha } = await fetchSnapshot(settings);
+      if (remoteSnap) {
+        state.snapshot = remoteSnap;
+        state.saveSnapshotToStorage(remoteSnap);
+        if (sha) localStorage.setItem(SNAPSHOT_SHA_KEY, sha);
+      }
+    } catch (e) {
+      state.addSyncLog(`⚠ Snapshot fetch failed: ${e.message}`);
+    }
+  }
+  return _pull();
+};
+
+// ── Compaction ───────────────────────────────────────────────────────────
+function getOrInitSlot() {
+  const raw = localStorage.getItem(COMPACT_SLOT_KEY);
+  if (raw) { try { return JSON.parse(raw); } catch {} }
+  const slot = {
+    dow: Math.floor(Math.random() * 7),
+    hour: Math.floor(Math.random() * 24),
+    minute: Math.floor(Math.random() * 60),
+  };
+  localStorage.setItem(COMPACT_SLOT_KEY, JSON.stringify(slot));
+  return slot;
+}
+
+// Next UTC datetime strictly after `afterMs` that matches (dow, hour, minute).
+function nextSlotAfter(afterMs, slot) {
+  const d = new Date(afterMs);
+  d.setUTCSeconds(0, 0);
+  d.setUTCHours(slot.hour, slot.minute);
+  if (d.getTime() <= afterMs) d.setUTCDate(d.getUTCDate() + 1);
+  const delta = (slot.dow - d.getUTCDay() + 7) % 7;
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.getTime();
+}
+
+function absorbIntoSnapshot(base, ops) {
+  const live = { ...(base?.live || {}) };
+  const tombstones = { ...(base?.tombstones || {}) };
+  const sorted = [...ops].sort((a, b) => a.ts - b.ts || a.opId.localeCompare(b.opId));
+  let maxTs = base?.lastCompactedTs || 0;
+  for (const op of sorted) {
+    if (op.ts > maxTs) maxTs = op.ts;
+    switch (op.op) {
+      case 'add-book':
+      case 'add-entry':
+        live[op.entityId] = { ...op.data };
+        delete tombstones[op.entityId];
+        break;
+      case 'update-book':
+      case 'update-entry':
+        if (live[op.entityId]) Object.assign(live[op.entityId], op.data);
+        break;
+      case 'delete-book':
+      case 'delete-entry':
+        delete live[op.entityId];
+        tombstones[op.entityId] = op.ts;
+        break;
+    }
+  }
+  return { version: 1, lastCompactedTs: maxTs, live, tombstones };
+}
+
+let compactionInFlight = false;
+
+async function maybeCompact() {
+  if (compactionInFlight) return;
+  const settings = getSettings();
+  if (!settings) return;
+  const last = +localStorage.getItem(LAST_COMPACTION_KEY) || 0;
+  const slot = getOrInitSlot();
+  const scheduled = last === 0 ? 0 : nextSlotAfter(last, slot);
+  if (Date.now() < scheduled) return;
+  // Minimum age guard even if slot math says "yes" (e.g. clock skew).
+  if (last && Date.now() - last < COMPACT_MIN_INTERVAL_MS) return;
+
+  compactionInFlight = true;
+  try {
+    await runCompaction(settings);
+  } catch (e) {
+    state.addSyncLog(`✗ Compaction error: ${e.message}`);
+  } finally {
+    compactionInFlight = false;
+  }
+}
+
+async function runCompaction(settings) {
+  let retries = 3;
+  while (retries-- > 0) {
+    // 1. Fresh pull so our ops view is up to date.
+    await sync.pull();
+    const baseSnap = state.snapshot || { version: 1, lastCompactedTs: 0, live: {}, tombstones: {} };
+    const baseSha = localStorage.getItem(SNAPSHOT_SHA_KEY) || null;
+
+    // 2. Identify absorb-eligible ops: newer than snapshot's cutoff, older
+    //    than the grace window, and belonging to an op type the snapshot
+    //    understands (skip anything unknown for forward-compat).
+    const cutoff = Date.now() - COMPACT_GRACE_MS;
+    const knownOps = new Set(['add-book','update-book','delete-book','add-entry','update-entry','delete-entry']);
+    const toAbsorb = state.localOps.filter(op =>
+      knownOps.has(op.op) && op.ts > baseSnap.lastCompactedTs && op.ts <= cutoff
+    );
+    if (toAbsorb.length < COMPACT_MIN_OPS) {
+      state.addSyncLog(`… Compaction skipped (${toAbsorb.length} eligible op(s))`);
+      localStorage.setItem(LAST_COMPACTION_KEY, String(Date.now()));
+      return;
+    }
+
+    // 3. Build next snapshot.
+    const newSnap = absorbIntoSnapshot(baseSnap, toAbsorb);
+    state.addSyncLog(`Compacting ${toAbsorb.length} ops into snapshot…`);
+
+    // 4. PUT snapshot with optimistic SHA. Conflicts abort this attempt.
+    const result = await putSnapshot(
+      settings, newSnap, baseSha,
+      `apps/${APP_NAME}/snapshot.json: absorb ${toAbsorb.length} op(s)`,
+    );
+    if (result.status === 'conflict') {
+      state.addSyncLog('⚠ Snapshot conflict; re-pulling and retrying…');
+      continue;
+    }
+    if (result.status !== 'ok') {
+      state.addSyncLog(`✗ Snapshot PUT failed: ${result.code}`);
+      return;
+    }
+    if (result.sha) localStorage.setItem(SNAPSHOT_SHA_KEY, result.sha);
+
+    // 5. Commit locally: swap in new snapshot, drop covered ops, rematerialize.
+    state.snapshot = newSnap;
+    state.saveSnapshotToStorage(newSnap);
+    state.localOps = state.localOps.filter(op => !state.isOpCoveredBySnapshot(op, newSnap));
+    state.deviceOps = state.localOps.filter(op => op.deviceId === state.DEVICE_ID);
+    state.invalidateMaterialized();
+    state.saveOpsToStorage();
+    state.reloadDb();
+    state.renderShelf();
+    localStorage.setItem(LAST_COMPACTION_KEY, String(Date.now()));
+    state.addSyncLog(`✓ Compacted ${toAbsorb.length} op(s) into snapshot`);
+
+    // 6. Next push will upload our now-thinner device file.
+    sync.schedulePush();
+    return;
+  }
+  state.addSyncLog('✗ Compaction gave up after 3 retries');
+}
+
+// ── Settings handlers (onclick targets in the HTML) ──────────────────────
+window.saveGitHubSettings = async () => {
+  const username = document.getElementById('gh-username').value.trim();
+  const repo = document.getElementById('gh-repo').value.trim() || 'personal-data';
+  const token = document.getElementById('gh-token').value.trim();
+  if (!username || !token) { globalThis.showToast?.('Please fill in username and token'); return; }
+  state.saveGHSettings({ username, repo, token });
+
+  const row = document.getElementById('gh-status-row');
+  const msg = document.getElementById('gh-status-msg');
+  row.style.display = 'flex';
+  msg.textContent = 'Testing connection…';
+  state.addSyncLog('Testing GitHub connection…');
+
+  try {
+    const res = await fetch(`https://api.github.com/repos/${username}/${repo}`, {
+      headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      msg.textContent = `✗ Error: ${err.message || res.status}`;
+      state.addSyncLog(`✗ Connection failed: ${err.message || res.status}`);
+      state.setSyncStatus('error', '✗ error');
+      return;
+    }
+    msg.textContent = '✓ Connected! Performing initial sync…';
+    state.addSyncLog(`✓ Connected to ${username}/${repo}`);
+    state.updateSettingsFields();
+    // Switching repos invalidates the device-ops SHA (points at the old repo)
+    // and the snapshot SHA. Clear both so the first push/pull starts fresh.
+    localStorage.removeItem('marginalia_device_ops_sha');
+    localStorage.removeItem(SNAPSHOT_SHA_KEY);
+    await sync.pull();
+    await sync.pushNow();
+    msg.textContent = '✓ Connected and synced!';
+  } catch (e) {
+    msg.textContent = `✗ Network error: ${e.message}`;
+    state.addSyncLog(`✗ Network error: ${e.message}`);
+    state.setSyncStatus('error', '✗ offline');
+  }
+};
+
+window.disconnectGitHub = () => {
+  if (!confirm('Disconnect GitHub sync? Your local data will not be affected.')) return;
+  localStorage.removeItem('marginalia_gh_settings');
+  localStorage.removeItem('marginalia_device_ops_sha');
+  localStorage.removeItem(SNAPSHOT_SHA_KEY);
+  state.setSyncStatus('', 'local');
+  state.updateSettingsFields();
+  state.addSyncLog('Disconnected from GitHub');
+  globalThis.showToast?.('GitHub disconnected');
+};
+
+window.syncNow = async () => { await sync.syncNow(); await maybeCompact(); };
+window.syncPull = async () => { await sync.pull(); };
+
+globalThis.marginaliaSync = sync;
+
+// ── Boot: pull on load, opportunistic compaction, visibilitychange refresh.
+if (getSettings()) {
+  (async () => {
+    await sync.pull();
+    if (getDeviceOps().length) await sync.pushNow();
+    await maybeCompact();
+  })().catch(() => {});
+}
+
+let lastAutoPull = Date.now();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (!getSettings()) return;
+  if (Date.now() - lastAutoPull < 10_000) return;
+  lastAutoPull = Date.now();
+  sync.pull().then(() => maybeCompact()).catch(() => {});
+});
+</script>
+
 </body>
 </html>

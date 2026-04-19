@@ -1,9 +1,10 @@
 // Marginalia Service Worker
-const CACHE = 'marginalia-v18';
+const CACHE = 'marginalia-v19';
 const ASSETS = [
   '/apps/marginalia/',
   '/apps/marginalia/index.html',
   '/apps/marginalia/manifest.json',
+  '/apps/marginalia/shared/personal-sync.mjs',
   'https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap'
 ];
 
