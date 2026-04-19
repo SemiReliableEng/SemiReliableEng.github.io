@@ -1,0 +1,3214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#372f29">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Marginalia</title>
+<link rel="manifest" href="/apps/marginalia/manifest.json">
+<link rel="icon" href="/apps/marginalia/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* MD3 Color Tokens — warm literary tonal palette from #8b4513 */
+    --md-primary: #8b4513;
+    --md-on-primary: #ffffff;
+    --md-primary-container: #ffdbc8;
+    --md-on-primary-container: #331100;
+
+    --md-secondary: #76594b;
+    --md-on-secondary: #ffffff;
+    --md-secondary-container: #ffdbc8;
+    --md-on-secondary-container: #2b160b;
+
+    --md-tertiary: #616038;
+    --md-on-tertiary: #ffffff;
+    --md-tertiary-container: #e7e5b2;
+    --md-on-tertiary-container: #1d1d00;
+
+    --md-surface: #fff8f5;
+    --md-on-surface: #211a14;
+    --md-on-surface-variant: #52443a;
+    --md-surface-container-lowest: #ffffff;
+    --md-surface-container-low: #fcf0ea;
+    --md-surface-container: #f6eae3;
+    --md-surface-container-high: #f0e4dd;
+    --md-surface-container-highest: #eaded7;
+
+    --md-outline: #85746a;
+    --md-outline-variant: #d7c3b7;
+
+    --md-inverse-surface: #372f29;
+    --md-inverse-on-surface: #fdeee6;
+    --md-inverse-primary: #ffb68a;
+
+    --md-error: #ba1a1a;
+    --md-on-error: #ffffff;
+    --md-error-container: #ffdad6;
+    --md-on-error-container: #410002;
+
+    /* MD3 Elevation shadows */
+    --md-elevation-1: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px 1px rgba(0,0,0,0.15);
+    --md-elevation-2: 0 1px 2px rgba(0,0,0,0.3), 0 2px 6px 2px rgba(0,0,0,0.15);
+    --md-elevation-3: 0 1px 3px rgba(0,0,0,0.3), 0 4px 8px 3px rgba(0,0,0,0.15);
+
+    /* MD3 Shape scale */
+    --md-shape-xs: 4px;
+    --md-shape-sm: 8px;
+    --md-shape-md: 12px;
+    --md-shape-lg: 16px;
+    --md-shape-xl: 28px;
+    --md-shape-full: 9999px;
+
+    /* MD3 Motion */
+    --md-motion-emphasized: cubic-bezier(0.2, 0, 0, 1);
+    --md-motion-standard: cubic-bezier(0.2, 0, 0, 1);
+    --md-motion-short: 200ms;
+    --md-motion-medium: 300ms;
+    --md-motion-long: 500ms;
+
+    /* Typography */
+    --serif: 'Playfair Display', Georgia, serif;
+    --sans: 'DM Sans', sans-serif;
+
+    /* Legacy aliases — mapped to MD3 tokens */
+    --ink: var(--md-on-surface);
+    --paper: var(--md-surface);
+    --cream: var(--md-surface-container);
+    --warm-mid: var(--md-outline-variant);
+    --accent: var(--md-primary);
+    --accent-light: #c1693a;
+    --muted: var(--md-outline);
+    --white: var(--md-surface-container-lowest);
+    --card-bg: var(--md-surface-container-low);
+    --shadow: rgba(33,26,20,0.12);
+    --radius: var(--md-shape-md);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  /* ── Layout ── */
+  #app { display: flex; flex-direction: column; height: 100dvh; }
+
+  .screen { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+  .screen.active { display: flex; }
+
+  /* ── Header (MD3 Top App Bar) ── */
+  .header {
+    background: var(--md-inverse-surface);
+    color: var(--md-inverse-on-surface);
+    padding: 16px 16px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .header-title {
+    font-family: var(--serif);
+    font-size: 22px;
+    font-weight: 400;
+    font-style: italic;
+    letter-spacing: 0.02em;
+    flex: 1;
+  }
+  .header-subtitle {
+    font-family: var(--sans);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--md-inverse-primary);
+    margin-top: 1px;
+  }
+  .btn-icon {
+    background: none;
+    border: none;
+    color: var(--md-inverse-on-surface);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: var(--md-shape-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--md-motion-short) var(--md-motion-standard);
+    flex-shrink: 0;
+    position: relative;
+  }
+  .btn-icon:hover { background: rgba(255,255,255,0.08); }
+  .btn-icon:active { background: rgba(255,255,255,0.12); }
+  .btn-icon svg { width: 24px; height: 24px; }
+
+  /* ── Shelf Screen ── */
+  .shelf-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 16px;
+    padding-bottom: calc(20px + var(--safe-bottom));
+  }
+
+  .shelf-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    color: var(--muted);
+    gap: 12px;
+    padding: 40px;
+  }
+  .shelf-empty-icon { font-size: 56px; opacity: 0.4; }
+  .shelf-empty h3 { font-family: var(--serif); font-size: 20px; font-weight: 400; color: var(--ink); }
+  .shelf-empty p { font-size: 14px; line-height: 1.6; }
+
+  .book-card {
+    background: var(--md-surface-container-low);
+    border-radius: var(--md-shape-md);
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin-bottom: 12px;
+    box-shadow: var(--md-elevation-1);
+    overflow: hidden;
+    cursor: pointer;
+    transition: box-shadow var(--md-motion-short) var(--md-motion-standard),
+                background var(--md-motion-short) var(--md-motion-standard);
+    position: relative;
+  }
+  .book-card:hover { box-shadow: var(--md-elevation-2); }
+  .book-card:active { background: color-mix(in srgb, var(--md-primary) 8%, var(--md-surface-container-low)); }
+
+  .book-cover-wrap {
+    width: 72px;
+    flex-shrink: 0;
+    background: var(--cream);
+    overflow: hidden;
+  }
+  .book-cover {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .book-cover-placeholder {
+    width: 100%;
+    height: 100%;
+    min-height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--cream), var(--warm-mid));
+    font-size: 28px;
+  }
+
+  .book-info {
+    flex: 1;
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-width: 0;
+  }
+  .book-title {
+    font-family: var(--serif);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .book-author {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .book-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .quote-count {
+    font-size: 12px;
+    color: var(--md-on-primary-container);
+    background: var(--md-primary-container);
+    padding: 4px 10px;
+    border-radius: var(--md-shape-full);
+    font-weight: 500;
+  }
+
+  .btn-add-quick {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--md-shape-sm);
+    background: var(--md-primary);
+    color: var(--md-on-primary);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    line-height: 1;
+    transition: box-shadow var(--md-motion-short) var(--md-motion-standard);
+    box-shadow: var(--md-elevation-1);
+    flex-shrink: 0;
+  }
+  .btn-add-quick:hover { box-shadow: var(--md-elevation-2); }
+  .btn-add-quick:active { background: color-mix(in srgb, var(--md-on-primary) 12%, var(--md-primary)); }
+
+  /* FAB (MD3 — squircle shape) */
+  .fab {
+    position: fixed;
+    bottom: calc(24px + var(--safe-bottom));
+    right: 20px;
+    width: 56px;
+    height: 56px;
+    border-radius: var(--md-shape-lg);
+    background: var(--md-primary-container);
+    color: var(--md-on-primary-container);
+    border: none;
+    cursor: pointer;
+    font-size: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--md-elevation-3);
+    transition: box-shadow var(--md-motion-short) var(--md-motion-standard);
+    z-index: 100;
+  }
+  .fab:hover { box-shadow: var(--md-elevation-3); background: color-mix(in srgb, var(--md-on-primary-container) 8%, var(--md-primary-container)); }
+  .fab:active { background: color-mix(in srgb, var(--md-on-primary-container) 12%, var(--md-primary-container)); }
+
+  /* ── Shelf Search Bar (MD3 Search Bar) ── */
+  .shelf-search-wrap {
+    padding: 12px 16px;
+    background: var(--md-surface);
+    border-bottom: 1px solid var(--md-outline-variant);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .shelf-search-row {
+    display: flex;
+    align-items: center;
+    background: var(--md-surface-container-high);
+    border-radius: var(--md-shape-full);
+    padding: 0 16px;
+    gap: 8px;
+    flex: 1;
+  }
+  .shelf-search-row svg { color: var(--md-on-surface-variant); flex-shrink: 0; width: 18px; height: 18px; }
+  .shelf-search-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--md-on-surface);
+    font-family: var(--sans);
+    font-size: 16px;
+    padding: 12px 0;
+    caret-color: var(--md-primary);
+  }
+  .shelf-search-input::placeholder { color: var(--md-on-surface-variant); }
+  .btn-add-book {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--md-shape-md);
+    background: var(--md-primary);
+    color: var(--md-on-primary);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: box-shadow var(--md-motion-short) var(--md-motion-standard);
+    box-shadow: var(--md-elevation-1);
+  }
+  .btn-add-book:hover { box-shadow: var(--md-elevation-2); }
+  .btn-add-book:active { background: color-mix(in srgb, var(--md-on-primary) 12%, var(--md-primary)); }
+  .btn-add-book svg { width: 20px; height: 20px; }
+
+  /* ── Search Screen ── */
+  .search-bar-wrap {
+    padding: 12px 16px;
+    background: var(--md-inverse-surface);
+    flex-shrink: 0;
+  }
+  .search-input-row {
+    display: flex;
+    align-items: center;
+    background: rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 0 12px;
+    gap: 8px;
+  }
+  .search-input-row svg { color: var(--warm-mid); flex-shrink: 0; width: 18px; height: 18px; }
+  .search-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--paper);
+    font-family: var(--sans);
+    font-size: 16px;
+    padding: 12px 0;
+    caret-color: var(--accent-light);
+  }
+  .search-input::placeholder { color: var(--warm-mid); }
+
+  .search-results {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+    padding-bottom: calc(20px + var(--safe-bottom));
+  }
+  .search-hint {
+    text-align: center;
+    color: var(--muted);
+    padding: 60px 20px;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .search-hint-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
+
+  .search-result-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--cream);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .search-result-item:last-child { border-bottom: none; }
+  .search-result-item:active { background: var(--cream); margin: 0 -16px; padding: 10px 16px; border-radius: 8px; }
+
+  .result-cover {
+    width: 44px;
+    height: 60px;
+    border-radius: 4px;
+    object-fit: cover;
+    background: var(--cream);
+    flex-shrink: 0;
+  }
+  .result-cover-placeholder {
+    width: 44px;
+    height: 60px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, var(--cream), var(--warm-mid));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+  .result-info { flex: 1; min-width: 0; }
+  .result-title { font-family: var(--serif); font-size: 15px; font-weight: 600; line-height: 1.3; }
+  .result-author { font-size: 13px; color: var(--muted); margin-top: 3px; }
+  .result-year { font-size: 12px; color: var(--warm-mid); margin-top: 2px; }
+
+  /* ── Book Detail Screen ── */
+  .book-hero {
+    background: var(--md-inverse-surface);
+    padding: 20px 20px 24px;
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+    flex-shrink: 0;
+  }
+  .book-hero-cover {
+    width: 80px;
+    height: 110px;
+    border-radius: 6px;
+    object-fit: cover;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    flex-shrink: 0;
+    background: var(--cream);
+  }
+  .book-hero-cover-placeholder {
+    width: 80px;
+    height: 110px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #3a3028, #5a4a38);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    flex-shrink: 0;
+    cursor: pointer;
+    position: relative;
+  }
+  .book-hero-cover-placeholder::after {
+    content: '+';
+    position: absolute;
+    bottom: 2px;
+    right: 4px;
+    font-size: 14px;
+    color: var(--warm-mid);
+    line-height: 1;
+  }
+  .book-hero-info { flex: 1; min-width: 0; }
+  .book-hero-title {
+    font-family: var(--serif);
+    font-size: 22px;
+    font-style: italic;
+    color: var(--md-inverse-on-surface);
+    line-height: 1.3;
+    text-decoration: none;
+    display: block;
+  }
+  .book-hero-title:hover { text-decoration: underline; }
+  .book-hero-author { font-size: 14px; color: var(--md-inverse-primary); margin-top: 6px; text-decoration: none; display: block; }
+  .book-hero-author:hover { text-decoration: underline; }
+  .book-hero-year { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .quotes-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 16px;
+    padding-bottom: calc(80px + var(--safe-bottom));
+  }
+
+  .quotes-empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 48px 20px;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .quotes-empty-icon { font-size: 36px; margin-bottom: 10px; opacity: 0.4; }
+
+  .section-label {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+    margin-top: 4px;
+  }
+
+  .quote-card {
+    background: var(--md-surface-container-lowest);
+    border-left: 3px solid var(--md-primary);
+    border-radius: 0 var(--md-shape-md) var(--md-shape-md) 0;
+    padding: 16px 16px 14px;
+    margin-bottom: 12px;
+    position: relative;
+    box-shadow: var(--md-elevation-1);
+  }
+  .quote-text {
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--ink);
+    font-style: normal;
+    white-space: pre-line;
+  }
+  .quote-location {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 8px;
+    font-style: normal;
+  }
+  .quote-date {
+    font-size: 11px;
+    color: var(--warm-mid);
+    margin-top: 4px;
+  }
+  .quote-copy {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    background: none;
+    border: none;
+    color: var(--warm-mid);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    opacity: 0.4;
+    transition: opacity 0.15s;
+  }
+  .quote-copy:hover { opacity: 1; color: var(--accent); }
+  .quote-copy svg { width: 15px; height: 15px; }
+
+  .quote-delete {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: none;
+    border: none;
+    color: var(--warm-mid);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+    font-size: 14px;
+  }
+  .quote-delete:hover { opacity: 1; color: #c0392b; }
+
+  .note-card {
+    background: var(--md-tertiary-container);
+    border-radius: var(--md-shape-md);
+    padding: 16px;
+    margin-bottom: 12px;
+    border: none;
+  }
+  .note-text { font-size: 14px; line-height: 1.6; color: var(--md-on-tertiary-container); white-space: pre-line; }
+  .note-date { font-size: 11px; color: var(--warm-mid); margin-top: 6px; }
+  .note-delete {
+    float: right;
+    background: none;
+    border: none;
+    color: var(--warm-mid);
+    cursor: pointer;
+    font-size: 14px;
+    opacity: 0.5;
+    padding: 2px 4px;
+  }
+  .note-delete:hover { opacity: 1; color: #c0392b; }
+
+  .quote-card[data-id], .note-card[data-id] { cursor: pointer; }
+  .quote-card[data-id]:active, .note-card[data-id]:active { opacity: 0.85; }
+
+  .location-suggestions {
+    position: relative;
+  }
+  .location-suggestions-list {
+    margin-top: 4px;
+    background: var(--md-surface-container-lowest);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-shape-xs);
+    overflow: hidden;
+    box-shadow: var(--md-elevation-2);
+  }
+  .location-suggestions-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    padding: 6px 12px 2px;
+  }
+  .location-suggestion {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-top: 1px solid var(--cream);
+    padding: 9px 12px;
+    font-size: 14px;
+    color: var(--ink);
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: background 0.12s;
+  }
+  .location-suggestion:first-of-type { border-top: none; }
+  .location-suggestion:hover, .location-suggestion:active { background: var(--cream); }
+
+  /* Tabs (MD3) */
+  .tabs {
+    display: flex;
+    background: var(--md-surface);
+    border-bottom: 1px solid var(--md-outline-variant);
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1;
+    padding: 14px 12px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--md-on-surface-variant);
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: color var(--md-motion-short) var(--md-motion-standard),
+                border-color var(--md-motion-short) var(--md-motion-standard);
+    letter-spacing: 0.04em;
+    position: relative;
+  }
+  .tab:hover { background: color-mix(in srgb, var(--md-on-surface) 5%, transparent); }
+  .tab.active { color: var(--md-primary); border-bottom-color: var(--md-primary); }
+
+  /* ── Add Quote Modal (MD3 Bottom Sheet / Dialog) ── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.32);
+    z-index: 200;
+    align-items: flex-end;
+  }
+  .modal-overlay.open { display: flex; }
+
+  .modal-sheet {
+    background: var(--md-surface-container-low);
+    border-radius: var(--md-shape-xl) var(--md-shape-xl) 0 0;
+    width: 100%;
+    max-height: 90dvh;
+    display: flex;
+    flex-direction: column;
+    animation: slideUp var(--md-motion-medium) var(--md-motion-emphasized);
+    padding-bottom: var(--safe-bottom);
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+
+  .modal-handle {
+    width: 32px;
+    height: 4px;
+    background: var(--md-outline-variant);
+    border-radius: var(--md-shape-full);
+    margin: 14px auto 0;
+    flex-shrink: 0;
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px 14px;
+    flex-shrink: 0;
+  }
+  .modal-title { font-family: var(--serif); font-size: 20px; font-weight: 600; color: var(--md-on-surface); }
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--md-on-surface-variant);
+    cursor: pointer;
+    font-size: 22px;
+    padding: 8px;
+    line-height: 1;
+    border-radius: var(--md-shape-full);
+    transition: background var(--md-motion-short) var(--md-motion-standard);
+  }
+  .modal-close:hover { background: color-mix(in srgb, var(--md-on-surface) 8%, transparent); }
+
+  .modal-body {
+    padding: 16px 24px;
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .field-label {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--md-on-surface-variant);
+    margin-bottom: 6px;
+  }
+  .field-group { display: flex; flex-direction: column; }
+
+  textarea, .text-input {
+    font-family: var(--serif);
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--md-on-surface);
+    background: transparent;
+    border: 1px solid var(--md-outline);
+    border-radius: var(--md-shape-xs);
+    padding: 14px 16px;
+    resize: none;
+    outline: none;
+    transition: border-color var(--md-motion-short) var(--md-motion-standard),
+                border-width var(--md-motion-short) var(--md-motion-standard);
+    width: 100%;
+  }
+  textarea:focus, .text-input:focus { border-color: var(--md-primary); border-width: 2px; padding: 13px 15px; }
+
+  .location-input {
+    font-family: var(--sans);
+    font-size: 14px;
+  }
+
+  .modal-footer {
+    padding: 14px 24px 18px;
+    flex-shrink: 0;
+  }
+
+  .btn-primary {
+    width: 100%;
+    background: var(--md-primary);
+    color: var(--md-on-primary);
+    border: none;
+    border-radius: var(--md-shape-full);
+    padding: 14px 24px;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: box-shadow var(--md-motion-short) var(--md-motion-standard),
+                background var(--md-motion-short) var(--md-motion-standard);
+    letter-spacing: 0.04em;
+  }
+  .btn-primary:hover { box-shadow: var(--md-elevation-1); background: color-mix(in srgb, var(--md-on-primary) 8%, var(--md-primary)); }
+  .btn-primary:active { background: color-mix(in srgb, var(--md-on-primary) 12%, var(--md-primary)); }
+  .btn-primary:disabled { opacity: 0.38; cursor: not-allowed; }
+
+  /* Tab toggle in modal (MD3 segmented button) */
+  .type-toggle {
+    display: flex;
+    border: 1px solid var(--md-outline);
+    border-radius: var(--md-shape-full);
+    overflow: hidden;
+  }
+  .type-btn {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--md-on-surface);
+    transition: background var(--md-motion-short) var(--md-motion-standard),
+                color var(--md-motion-short) var(--md-motion-standard);
+    letter-spacing: 0.04em;
+    border-right: 1px solid var(--md-outline);
+  }
+  .type-btn:last-child { border-right: none; }
+  .type-btn:hover { background: color-mix(in srgb, var(--md-on-surface) 5%, transparent); }
+  .type-btn.active { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+
+  /* OCR scan buttons */
+  #ocr-row { display: flex; gap: 8px; margin-top: 6px; }
+  .btn-ocr {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: 1px solid var(--md-outline);
+    color: var(--md-primary);
+    border-radius: var(--md-shape-full);
+    padding: 8px 16px;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--md-motion-short) var(--md-motion-standard);
+    letter-spacing: 0.04em;
+  }
+  .btn-ocr:hover { background: color-mix(in srgb, var(--md-primary) 8%, transparent); }
+  .btn-ocr:disabled { opacity: 0.38; cursor: not-allowed; }
+  .btn-ocr svg { width: 16px; height: 16px; }
+
+  /* Search all quotes screen */
+  .search-quotes-wrap {
+    padding: 12px 16px;
+    background: var(--md-surface);
+    border-bottom: 1px solid var(--md-outline-variant);
+    flex-shrink: 0;
+  }
+  .search-quotes-input {
+    width: 100%;
+    background: var(--md-surface-container-high);
+    border: none;
+    border-radius: var(--md-shape-full);
+    padding: 12px 16px;
+    font-family: var(--sans);
+    font-size: 15px;
+    color: var(--md-on-surface);
+    outline: none;
+    transition: background var(--md-motion-short) var(--md-motion-standard);
+  }
+  .search-quotes-input:focus { background: var(--md-surface-container-highest); }
+
+  .all-quotes-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    padding-bottom: calc(20px + var(--safe-bottom));
+  }
+  .quote-book-ref {
+    font-size: 12px;
+    color: var(--accent);
+    font-style: normal;
+    margin-top: 6px;
+    font-family: var(--sans);
+  }
+
+  /* ── Desktop Master-Detail ── */
+  #panel-detail { display: contents; }
+  #detail-placeholder { display: none; }
+
+  @media (min-width: 1024px) {
+    body { background: #e8e0d0; }
+
+    #app {
+      flex-direction: row;
+      max-width: none;
+      margin: 0;
+      box-shadow: none;
+      height: 100dvh;
+    }
+
+    #screen-shelf {
+      display: flex !important;
+      width: 380px;
+      min-width: 380px;
+      max-width: 380px;
+      border-right: 1px solid rgba(26,22,18,0.12);
+      height: 100dvh;
+      position: relative;
+    }
+
+    #panel-detail {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      height: 100dvh;
+      overflow: hidden;
+      background: var(--paper);
+    }
+
+    #panel-detail > .screen {
+      height: 100%;
+    }
+
+    #detail-placeholder.active {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      background: var(--paper);
+    }
+
+    .book-card.selected {
+      background: color-mix(in srgb, var(--md-primary) 8%, var(--md-surface-container-low));
+      box-shadow: inset 3px 0 0 var(--md-primary), var(--md-elevation-1);
+    }
+
+    /* Center modals on desktop instead of bottom sheet */
+    .modal-overlay {
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-sheet {
+      border-radius: var(--md-shape-xl);
+      max-width: 520px;
+      max-height: 80dvh;
+    }
+  }
+
+  /* Tablet: keep single column but wider */
+  @media (min-width: 768px) and (max-width: 1023px) {
+    #app {
+      max-width: 680px;
+      margin: 0 auto;
+      box-shadow: 0 0 60px rgba(0,0,0,0.15);
+      min-height: 100dvh;
+    }
+    body { background: #e8e0d0; }
+  }
+
+  /* Spinner */
+  .spinner {
+    text-align: center;
+    padding: 40px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .spin { animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Toast (MD3 Snackbar) */
+  .toast {
+    position: fixed;
+    bottom: calc(80px + var(--safe-bottom));
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--md-inverse-surface);
+    color: var(--md-inverse-on-surface);
+    padding: 12px 20px;
+    border-radius: var(--md-shape-xs);
+    font-size: 14px;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+    opacity: 0;
+    transition: opacity var(--md-motion-short) var(--md-motion-standard),
+                transform var(--md-motion-short) var(--md-motion-standard);
+    pointer-events: none;
+    z-index: 500;
+    white-space: nowrap;
+    box-shadow: var(--md-elevation-3);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* Metadata lookup */
+  .meta-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: var(--md-inverse-primary);
+    border-radius: var(--md-shape-full);
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: var(--sans);
+    cursor: pointer;
+    transition: background var(--md-motion-short) var(--md-motion-standard);
+    letter-spacing: 0.04em;
+  }
+  .meta-btn:hover { background: rgba(255,255,255,0.16); }
+  .meta-btn svg { width: 14px; height: 14px; }
+  .book-hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .meta-candidate {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--cream);
+    cursor: pointer;
+  }
+  .meta-candidate:last-child { border-bottom: none; }
+  .meta-candidate:active { background: var(--cream); margin: 0 -20px; padding: 12px 20px; border-radius: 8px; }
+  .meta-candidate-cover {
+    width: 44px; height: 60px; border-radius: 4px;
+    object-fit: cover; flex-shrink: 0; background: var(--cream);
+  }
+  .meta-candidate-placeholder {
+    width: 44px; height: 60px; border-radius: 4px;
+    background: linear-gradient(135deg, var(--cream), var(--warm-mid));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+  }
+  .meta-candidate-info { flex: 1; min-width: 0; }
+  .meta-candidate-title { font-family: var(--serif); font-size: 15px; font-weight: 600; line-height: 1.3; }
+  .meta-candidate-author { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .meta-candidate-year { font-size: 12px; color: var(--warm-mid); margin-top: 2px; }
+  .meta-check { color: var(--accent); font-size: 18px; flex-shrink: 0; }
+  .manual-add-bar {
+    border-top: 1px solid var(--cream);
+    padding: 14px 16px;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.15s;
+  }
+  .manual-add-bar:active { background: var(--cream); }
+  .manual-add-bar svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+  .manual-form {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border-top: 1px solid var(--cream);
+    margin-top: 4px;
+  }
+  .manual-form .field-label { margin-bottom: 4px; }
+  .manual-form .text-input {
+    font-family: var(--sans);
+    font-size: 15px;
+  }
+  .manual-form-title {
+    font-family: var(--serif);
+    font-size: 16px;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+  .manual-form-hint {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    line-height: 1.5;
+  }
+
+  /* Sync status indicator */
+  .sync-status {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--warm-mid);
+    letter-spacing: 0.05em;
+    padding: 2px 6px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .sync-status:hover { background: rgba(255,255,255,0.1); }
+  .sync-status.syncing { color: #f0c040; }
+  .sync-status.error { color: #e07070; }
+  .sync-status.ok { color: #7ec87e; }
+  .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .sync-spin { animation: spin 1s linear infinite; display: inline-block; font-style: normal; }
+
+  /* Settings screen */
+  .settings-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 16px;
+    padding-bottom: calc(40px + var(--safe-bottom));
+  }
+  .settings-section {
+    margin-bottom: 28px;
+  }
+  .settings-section-title {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+  .settings-card {
+    background: var(--md-surface-container-low);
+    border-radius: var(--md-shape-md);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: var(--md-elevation-1);
+  }
+  .settings-hint {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .settings-hint a { color: var(--accent); text-decoration: none; }
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .settings-label { font-size: 14px; font-weight: 500; color: var(--ink); }
+  .btn-secondary {
+    background: transparent;
+    color: var(--md-primary);
+    border: 1px solid var(--md-outline);
+    border-radius: var(--md-shape-full);
+    padding: 10px 24px;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--md-motion-short) var(--md-motion-standard);
+    white-space: nowrap;
+    letter-spacing: 0.04em;
+  }
+  .btn-secondary:hover { background: color-mix(in srgb, var(--md-primary) 8%, transparent); }
+  .btn-secondary:active { background: color-mix(in srgb, var(--md-primary) 12%, transparent); }
+  .btn-danger {
+    background: none;
+    color: var(--md-error);
+    border: 1px solid var(--md-error);
+    border-radius: var(--md-shape-full);
+    padding: 10px 24px;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 4px;
+    letter-spacing: 0.04em;
+    transition: background var(--md-motion-short) var(--md-motion-standard);
+  }
+  .btn-danger:hover { background: color-mix(in srgb, var(--md-error) 8%, transparent); }
+  .btn-danger:active { background: color-mix(in srgb, var(--md-error) 12%, transparent); }
+  .sync-log {
+    font-size: 12px;
+    color: var(--md-on-surface-variant);
+    font-family: monospace;
+    background: var(--md-surface-container);
+    border-radius: var(--md-shape-sm);
+    padding: 12px 14px;
+    line-height: 1.7;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ══ SHELF SCREEN ══ -->
+  <div id="screen-shelf" class="screen active">
+    <div class="header">
+      <div onclick="clearShelfFilter()" style="cursor:pointer">
+        <div class="header-title">Marginalia</div>
+        <div class="header-subtitle">your reading journal</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <span class="sync-status" id="sync-status" onclick="showScreen('screen-settings')" title="Sync settings">
+          <span class="sync-dot"></span>
+          <span id="sync-label">local</span>
+        </span>
+        <button class="btn-icon" onclick="showScreen('screen-all-quotes')" title="Search all quotes">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </button>
+        <button class="btn-icon" onclick="showScreen('screen-settings')" title="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="shelf-search-wrap">
+      <div class="shelf-search-row">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="shelf-search-input" class="shelf-search-input" type="search" placeholder="Filter your books…" oninput="onShelfFilterInput()" name="book-filter" autocomplete="one-time-code">
+      </div>
+      <button class="btn-add-book" onclick="addBookFromShelf()" title="Add a book">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+    <div class="shelf-scroll" id="shelf-list"></div>
+  </div>
+
+  <div id="panel-detail">
+
+  <!-- ══ DETAIL PLACEHOLDER (desktop only) ══ -->
+  <div id="detail-placeholder">
+    <div style="font-size:48px;opacity:0.3;margin-bottom:16px">📖</div>
+    <div style="font-family:var(--serif);font-size:22px;color:var(--ink);margin-bottom:8px;font-style:italic">Select a book</div>
+    <div style="font-size:14px;line-height:1.6;color:var(--muted);max-width:240px">Choose a book from your shelf to view its quotes and notes.</div>
+  </div>
+
+  <!-- ══ SEARCH BOOK SCREEN ══ -->
+  <div id="screen-search" class="screen">
+    <div class="header">
+      <button class="btn-icon" onclick="showScreen('screen-shelf')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </button>
+      <div class="header-title" style="font-style:normal;font-size:17px;font-family:var(--sans);font-weight:500;">Add a Book</div>
+    </div>
+    <!-- Search panel -->
+    <div id="search-panel" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+      <div class="search-bar-wrap">
+        <div class="search-input-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input class="search-input" id="search-input" type="search" placeholder="Title or author…" autocomplete="off" autocorrect="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="search-results" id="search-results">
+        <div class="search-hint">
+          <div class="search-hint-icon">📚</div>
+          Search for a book to add it to your shelf
+        </div>
+      </div>
+    </div>
+    <!-- Manual entry panel (replaces search panel entirely) -->
+    <div id="manual-panel" style="display:none;flex:1;overflow-y:auto;padding:16px;padding-bottom:calc(20px + var(--safe-bottom))">
+      <div style="margin-bottom:16px">
+        <span style="font-size:13px;color:var(--accent);cursor:pointer;font-weight:500" onclick="hideManualPanel()">← Back to search</span>
+      </div>
+      <div class="manual-form-title">Add book manually</div>
+      <div class="manual-form-hint">Fill in what you know — only the title is required.</div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+        <div class="field-group">
+          <div class="field-label">Title *</div>
+          <input class="text-input" id="manual-title" type="text" placeholder="Book title" autocorrect="off">
+        </div>
+        <div class="field-group">
+          <div class="field-label">Author</div>
+          <input class="text-input" id="manual-author" type="text" placeholder="Author name" autocorrect="off">
+        </div>
+        <div class="field-group">
+          <div class="field-label">Year <span style="opacity:0.5;font-style:italic;text-transform:none;letter-spacing:0">(optional)</span></div>
+          <input class="text-input" id="manual-year" type="text" placeholder="e.g. 2021" inputmode="numeric" maxlength="4">
+        </div>
+        <button class="btn-primary" onclick="addBookManually()" style="margin-top:4px">Add to Shelf</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ BOOK DETAIL SCREEN ══ -->
+  <div id="screen-book" class="screen">
+    <div class="header">
+      <button class="btn-icon" onclick="showScreen('screen-shelf')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </button>
+      <div class="header-title" style="flex:1"></div>
+      <button class="btn-icon" id="btn-delete-book" title="Remove book" onclick="deleteCurrentBook()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+        </svg>
+      </button>
+    </div>
+    <div class="book-hero" id="book-hero"></div>
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('quotes')" id="tab-quotes">Quotes</div>
+      <div class="tab" onclick="switchTab('notes')" id="tab-notes">Notes</div>
+    </div>
+    <div class="quotes-scroll" id="book-content"></div>
+    <button class="fab" onclick="openAddModal()" title="Add quote or note">+</button>
+  </div>
+
+  <!-- ══ ALL QUOTES SCREEN ══ -->
+  <div id="screen-all-quotes" class="screen">
+    <div class="header">
+      <button class="btn-icon" onclick="showScreen('screen-shelf')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </button>
+      <div class="header-title" style="font-style:normal;font-size:17px;font-family:var(--sans);font-weight:500;">All Quotes</div>
+      <button class="btn-icon" onclick="openAskAIModal()" title="Ask AI about your quotes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+      </button>
+    </div>
+    <div class="search-quotes-wrap">
+      <input class="search-quotes-input" id="search-quotes-input" type="search" placeholder="Search quotes…" oninput="renderAllQuotes()" autocorrect="off">
+    </div>
+    <div class="all-quotes-scroll" id="all-quotes-list"></div>
+  </div>
+
+  <!-- ══ SETTINGS SCREEN ══ -->
+  <div id="screen-settings" class="screen">
+    <div class="header">
+      <button class="btn-icon" onclick="showScreen('screen-shelf')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </button>
+      <div class="header-title" style="font-style:normal;font-size:17px;font-family:var(--sans);font-weight:500;">Settings</div>
+    </div>
+    <div class="settings-scroll">
+
+      <div class="settings-section">
+        <div class="settings-section-title">GitHub Sync</div>
+        <div class="settings-card">
+          <div class="settings-hint">
+            Sync your data to a private GitHub repository. Create a repo named <strong>book-quotes</strong> and a Personal Access Token with <strong>repo</strong> scope at
+            <a href="https://github.com/settings/tokens" target="_blank">github.com/settings/tokens</a>.
+          </div>
+          <div class="field-group">
+            <div class="field-label">GitHub Username</div>
+            <input class="text-input" id="gh-username" type="text" placeholder="your-username" autocorrect="off" autocapitalize="off" spellcheck="false">
+          </div>
+          <div class="field-group">
+            <div class="field-label">Repository Name</div>
+            <input class="text-input" id="gh-repo" type="text" placeholder="book-quotes" autocorrect="off" autocapitalize="off" spellcheck="false">
+          </div>
+          <div class="field-group">
+            <div class="field-label">Personal Access Token</div>
+            <input class="text-input" id="gh-token" type="password" placeholder="ghp_…" autocorrect="off" autocapitalize="off" spellcheck="false">
+          </div>
+          <button class="btn-primary" onclick="saveGitHubSettings()">Save & Test Connection</button>
+          <div class="settings-row" id="gh-status-row" style="display:none">
+            <div class="settings-hint" id="gh-status-msg"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Sync Log</div>
+        <div class="settings-card">
+          <div class="sync-log" id="sync-log">No sync activity yet.</div>
+          <div class="settings-row">
+            <button class="btn-secondary" onclick="syncNow()" style="flex:1">Sync Now</button>
+            <button class="btn-secondary" onclick="syncPull()" style="flex:1">Pull from GitHub</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Data Management</div>
+        <div class="settings-card">
+          <div class="settings-hint">Compact the op log into a single snapshot. Reduces sync overhead and cleans up old operation files. All devices sync to the compacted state automatically.</div>
+          <div class="settings-row" id="compact-info-row" style="display:none">
+            <div class="settings-hint" id="compact-stats"></div>
+          </div>
+          <button class="btn-secondary" onclick="compactOps()">Compact Op Log</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Quote Scanner</div>
+        <div class="settings-card">
+          <div class="settings-hint">
+            Scan book photos to extract quotes. Tesseract runs locally in your browser (no account needed). Gemini gives better accuracy but requires an API key.
+          </div>
+          <div class="field-group">
+            <div class="field-label">OCR Engine</div>
+            <select class="text-input" id="ocr-engine" onchange="saveOCREngine(this.value)" style="font-family:var(--sans);font-size:14px;">
+              <option value="tesseract">Tesseract (local, free)</option>
+              <option value="gemini">Gemini AI (cloud, needs key)</option>
+            </select>
+          </div>
+          <div id="gemini-key-group" style="display:none">
+            <div class="field-group">
+              <div class="field-label">Gemini API Key</div>
+              <input class="text-input" id="gemini-key" type="password" placeholder="AIza…" autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false" name="gemini-key-input">
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn-primary" onclick="saveGeminiSettings()" style="flex:1">Save & Test Key</button>
+              <button class="btn-danger" onclick="forgetGeminiKey()" id="btn-forget-gemini" style="flex:0 0 auto;padding:12px 16px;display:none">Forget Key</button>
+            </div>
+            <div class="settings-row" id="gemini-status-row" style="display:none">
+              <div class="settings-hint" id="gemini-status-msg"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Danger Zone</div>
+        <div class="settings-card">
+          <div class="settings-hint">Disconnect GitHub sync. Your local data is not affected.</div>
+          <button class="btn-danger" onclick="disconnectGitHub()">Disconnect GitHub</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  </div><!-- /panel-detail -->
+
+</div><!-- /app -->
+
+<!-- ══ ADD MODAL ══ -->
+<div class="modal-overlay" id="modal-add">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title" id="modal-book-title">Add</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="type-toggle">
+        <button class="type-btn active" onclick="setType('quote')" id="type-quote">💬 Quote</button>
+        <button class="type-btn" onclick="setType('note')" id="type-note">📝 Note</button>
+      </div>
+      <div class="field-group">
+        <div class="field-label" id="text-label">Quote text</div>
+        <textarea id="entry-text" rows="6" placeholder="Paste or type the quote…"></textarea>
+        <div id="ocr-row" style="display:none">
+          <button class="btn-ocr" id="btn-ocr-camera" onclick="startOCR('camera')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            Take photo
+          </button>
+          <button class="btn-ocr" id="btn-ocr-file" onclick="startOCR('file')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            Scan from photo
+          </button>
+          <input type="file" id="ocr-camera" accept="image/*" capture="environment" style="display:none">
+          <input type="file" id="ocr-file" accept="image/*" style="display:none">
+          <input type="file" id="cover-file" accept="image/*" style="display:none">
+        </div>
+      </div>
+      <div class="field-group" id="location-group">
+        <div class="field-label">Location <span style="opacity:0.5;font-style:italic;text-transform:none;letter-spacing:0">(optional — chapter, %, etc.)</span></div>
+        <input class="text-input location-input" id="entry-location" type="text" placeholder="e.g. Chapter 4, 67%…">
+        <div class="location-suggestions" id="location-suggestions"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-primary" id="btn-save" onclick="saveEntry()">Save Quote</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-meta">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">Match Book Metadata</div>
+      <button class="modal-close" onclick="history.back()">×</button>
+    </div>
+    <div class="modal-body" id="modal-meta-body">
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-edit-book" onclick="if(event.target===this)history.back()">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">Edit Book</div>
+      <button class="modal-close" onclick="history.back()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-group">
+        <div class="field-label">Title</div>
+        <input class="text-input" id="edit-book-title" type="text" autocomplete="one-time-code" name="edit-title">
+      </div>
+      <div class="field-group">
+        <div class="field-label">Author</div>
+        <input class="text-input" id="edit-book-author" type="text" autocomplete="one-time-code" name="edit-author">
+      </div>
+      <div class="field-group">
+        <div class="field-label">Year</div>
+        <input class="text-input" id="edit-book-year" type="text" autocomplete="one-time-code" name="edit-year">
+      </div>
+      <div class="field-group">
+        <div class="field-label">Started reading</div>
+        <input class="text-input" id="edit-book-started" type="date">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-primary" onclick="saveBookEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-ask-ai" onclick="if(event.target===this)history.back()">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">Ask AI about your quotes</div>
+      <button class="modal-close" onclick="history.back()">×</button>
+    </div>
+    <div class="modal-body" style="gap:10px;">
+      <p style="font-size:14px;color:var(--muted);line-height:1.5;">Your quotes will be copied to your clipboard. Choose where to open the conversation.</p>
+      <button class="btn-primary" onclick="askAI('claude')" style="display:flex;align-items:center;justify-content:center;gap:10px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+        Open in Claude
+      </button>
+      <button class="btn-primary" onclick="askAI('gemini')" style="display:flex;align-items:center;justify-content:center;gap:10px;background:var(--ink);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>
+        Open in Gemini
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+// DATA LAYER (WAL / Event-Sourced)
+// ═══════════════════════════════════════════════
+const OPS_LS_KEY = 'marginalia_ops';
+const DEVICE_ID_KEY = 'marginalia_device_id';
+const LAST_ACCESSED_KEY = 'marginalia_last_accessed';
+
+function localStorageAvailable() {
+  try { localStorage.setItem('_test', '1'); localStorage.removeItem('_test'); return true; }
+  catch { return false; }
+}
+const USE_LS = localStorageAvailable();
+
+function getDeviceId() {
+  if (!USE_LS) return 'memory';
+  let id = localStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id = crypto.randomUUID().slice(0, 8);
+    localStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+}
+const DEVICE_ID = getDeviceId();
+let opSeq = 0;
+
+// ── Op storage ──────────────────────────────────────
+let localOps = [];   // all ops from all devices
+let deviceOps = [];  // ops from THIS device only
+let materializedCache = null;
+
+function loadOpsFromStorage() {
+  try {
+    if (USE_LS) return JSON.parse(localStorage.getItem(OPS_LS_KEY)) || [];
+    return [];
+  } catch { return []; }
+}
+
+function saveOpsToStorage() {
+  if (USE_LS) { try { localStorage.setItem(OPS_LS_KEY, JSON.stringify(localOps)); } catch {} }
+}
+
+// ── Last-accessed map (local-only, never synced) ────
+function loadLastAccessed() {
+  try {
+    if (USE_LS) return JSON.parse(localStorage.getItem(LAST_ACCESSED_KEY)) || {};
+    return {};
+  } catch { return {}; }
+}
+function saveLastAccessed(map) {
+  if (USE_LS) { try { localStorage.setItem(LAST_ACCESSED_KEY, JSON.stringify(map)); } catch {} }
+}
+let lastAccessedMap = loadLastAccessed();
+
+// ── Materialize ops into current state ──────────────
+function materialize(ops) {
+  const sorted = [...ops].sort((a, b) => a.ts - b.ts || a.opId.localeCompare(b.opId));
+  const books = {};
+  const entries = {};
+  for (const op of sorted) {
+    switch (op.op) {
+      case 'add-book':
+        books[op.entityId] = { id: op.entityId, ...op.data };
+        break;
+      case 'update-book':
+        if (books[op.entityId]) Object.assign(books[op.entityId], op.data);
+        break;
+      case 'delete-book':
+        delete books[op.entityId];
+        break;
+      case 'add-entry':
+        entries[op.entityId] = { id: op.entityId, ...op.data };
+        break;
+      case 'update-entry':
+        if (entries[op.entityId]) Object.assign(entries[op.entityId], op.data);
+        break;
+      case 'delete-entry':
+        delete entries[op.entityId];
+        break;
+    }
+  }
+  return {
+    books: Object.values(books),
+    entries: Object.values(entries)
+  };
+}
+
+function loadData() {
+  if (!materializedCache) {
+    materializedCache = materialize(localOps);
+  }
+  // Overlay local-only lastAccessed
+  for (const book of materializedCache.books) {
+    if (lastAccessedMap[book.id]) book.lastAccessed = lastAccessedMap[book.id];
+  }
+  return materializedCache;
+}
+
+// ── Create and apply ops ────────────────────────────
+function createOp(opType, entityId, data) {
+  const ts = Date.now();
+  const op = {
+    opId: `${DEVICE_ID}_${String(ts).padStart(13, '0')}_${String(opSeq).padStart(4, '0')}`,
+    op: opType,
+    entityId,
+    data,
+    ts,
+    deviceId: DEVICE_ID
+  };
+  opSeq++;
+  return op;
+}
+
+function applyOp(opType, entityId, data) {
+  const op = createOp(opType, entityId, data);
+  localOps.push(op);
+  deviceOps.push(op);
+  materializedCache = null; // invalidate
+  saveOpsToStorage();
+  scheduleSyncPush();
+  return op;
+}
+
+function applyOps(opList) {
+  for (const { opType, entityId, data } of opList) {
+    const op = createOp(opType, entityId, data);
+    localOps.push(op);
+    deviceOps.push(op);
+  }
+  materializedCache = null;
+  saveOpsToStorage();
+  scheduleSyncPush();
+}
+
+function setLastAccessed(bookId) {
+  lastAccessedMap[bookId] = Date.now();
+  saveLastAccessed(lastAccessedMap);
+  materializedCache = null;
+}
+
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+localOps = loadOpsFromStorage();
+deviceOps = localOps.filter(op => op.deviceId === DEVICE_ID);
+let db = loadData();
+let currentBookId = null;
+let currentTab = 'quotes';
+let entryType = 'quote';
+let editingEntryId = null;
+let searchTimer = null;
+let manualFormActive = false;
+
+// ═══════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════
+function isDesktop() {
+  return window.matchMedia('(min-width: 1024px)').matches;
+}
+
+function showScreen(id) {
+  const desktop = isDesktop();
+  const placeholder = document.getElementById('detail-placeholder');
+  // Reset filter history tracking when navigating away
+  shelfFilterHasHistory = false;
+
+  if (desktop) {
+    // Desktop: shelf always visible, detail screens in right panel
+    const detailScreens = document.querySelectorAll('#panel-detail > .screen');
+
+    if (id === 'screen-shelf') {
+      // Deactivate detail screens, show placeholder
+      detailScreens.forEach(s => s.classList.remove('active'));
+      placeholder.classList.add('active');
+      document.getElementById('screen-shelf').classList.add('active');
+      currentBookId = null;
+      renderShelf();
+      history.replaceState({ screen: 'screen-shelf' }, '');
+    } else {
+      // Show target detail screen, keep shelf visible
+      detailScreens.forEach(s => s.classList.remove('active'));
+      placeholder.classList.remove('active');
+      document.getElementById(id).classList.add('active');
+      document.getElementById('screen-shelf').classList.add('active');
+      history.pushState({ screen: id }, '');
+    }
+  } else {
+    // Mobile: original single-screen behavior
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    if (id === 'screen-shelf') {
+      renderShelf();
+      history.replaceState({ screen: 'screen-shelf' }, '');
+    } else {
+      history.pushState({ screen: 'screen-shelf' }, '');
+    }
+  }
+
+  if (id !== 'screen-search') manualFormActive = false;
+  if (id === 'screen-search') {
+    manualFormActive = false;
+    document.getElementById('manual-panel').style.display = 'none';
+    document.getElementById('search-panel').style.display = 'flex';
+    const inp = document.getElementById('search-input');
+    inp.value = '';
+    document.getElementById('search-results').innerHTML = `<div class="search-hint"><div class="search-hint-icon">📚</div>Search for a book to add it to your shelf</div>`;
+    setTimeout(() => inp.focus(), 50);
+  }
+  if (id === 'screen-all-quotes') { renderAllQuotes(); setTimeout(() => document.getElementById('search-quotes-input').focus(), 100); }
+  if (id === 'screen-settings') { updateSettingsFields(); }
+}
+
+// Handle Android back gesture / browser back button
+// ── Modal history helpers ─────────────────────────────────────
+const modalIds = ['modal-add', 'modal-meta', 'modal-edit-book', 'modal-ask-ai'];
+let _closingViaPopstate = false;
+
+function openModalWithHistory(id) {
+  history.pushState({ modal: id }, '');
+  document.getElementById(id).classList.add('open');
+}
+
+function closeModalDirect(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+function closeTopModal() {
+  // Close the first open modal found, popping history if needed
+  for (const id of modalIds) {
+    const el = document.getElementById(id);
+    if (el && el.classList.contains('open')) {
+      if (!_closingViaPopstate) history.back();
+      else closeModalDirect(id);
+      return true;
+    }
+  }
+  return false;
+}
+
+window.addEventListener('popstate', (e) => {
+  // Check if a modal is open — close it first
+  for (const id of modalIds) {
+    const el = document.getElementById(id);
+    if (el && el.classList.contains('open')) {
+      _closingViaPopstate = true;
+      closeModalDirect(id);
+      if (id === 'modal-add') editingEntryId = null;
+      _closingViaPopstate = false;
+      return;
+    }
+  }
+
+  // If filter is active, back clears it (both mobile and desktop)
+  if (shelfFilterHasHistory) {
+    clearShelfFilter();
+    return;
+  }
+
+  if (isDesktop()) {
+    // On desktop, back = deselect (show placeholder)
+    const detailScreens = document.querySelectorAll('#panel-detail > .screen');
+    const hasActive = Array.from(detailScreens).some(s => s.classList.contains('active'));
+    if (hasActive) {
+      detailScreens.forEach(s => s.classList.remove('active'));
+      document.getElementById('detail-placeholder').classList.add('active');
+      currentBookId = null;
+      renderShelf();
+    }
+  } else {
+    const active = document.querySelector('.screen.active');
+    if (active && active.id !== 'screen-shelf') {
+      showScreen('screen-shelf');
+    }
+  }
+});
+
+let shelfFilterHasHistory = false;
+
+function onShelfFilterInput() {
+  const q = document.getElementById('shelf-search-input').value.trim();
+  if (q && !shelfFilterHasHistory) {
+    // Push a state so back gesture can clear the filter
+    history.pushState({ screen: 'screen-shelf', filtering: true }, '');
+    shelfFilterHasHistory = true;
+  } else if (!q && shelfFilterHasHistory) {
+    shelfFilterHasHistory = false;
+  }
+  renderShelf();
+}
+
+function clearShelfFilter() {
+  const inp = document.getElementById('shelf-search-input');
+  if (inp.value.trim()) {
+    inp.value = '';
+    shelfFilterHasHistory = false;
+    renderShelf();
+  }
+}
+
+function openSearchWithQuery(q) {
+  showScreen('screen-search');
+  const inp = document.getElementById('search-input');
+  inp.value = q;
+  searchBooks(q);
+}
+
+function addBookFromShelf() {
+  const q = (document.getElementById('shelf-search-input').value || '').trim();
+  if (q) {
+    openSearchWithQuery(q);
+  } else {
+    showScreen('screen-search');
+  }
+}
+
+function openBook(bookId) {
+  currentBookId = bookId;
+  currentTab = 'quotes';
+  renderBookDetail();
+  showScreen('screen-book');
+  // Update selection highlight on desktop
+  if (isDesktop()) renderShelf();
+}
+
+// ═══════════════════════════════════════════════
+// SHELF
+// ═══════════════════════════════════════════════
+function renderShelf() {
+  db = loadData();
+  const el = document.getElementById('shelf-list');
+  const filterEl = document.getElementById('shelf-search-input');
+  const filter = filterEl ? filterEl.value.trim().toLowerCase() : '';
+
+  // Sort by most recent entry added for each book
+  const latestEntry = {};
+  db.entries.forEach(e => {
+    if (!latestEntry[e.bookId] || e.createdAt > latestEntry[e.bookId]) latestEntry[e.bookId] = e.createdAt;
+  });
+  let books = [...db.books].sort((a,b) => (latestEntry[b.id]||b.addedAt||0) - (latestEntry[a.id]||a.addedAt||0));
+
+  if (filter) books = books.filter(b =>
+    b.title.toLowerCase().includes(filter) || (b.author||'').toLowerCase().includes(filter)
+  );
+
+  if (!books.length && filter) {
+    const q = esc(filterEl.value.trim());
+    el.innerHTML = `<div class="shelf-empty">
+      <div class="shelf-empty-icon">🔍</div>
+      <h3>No books matching &ldquo;${q}&rdquo;</h3>
+      <p>Not on your shelf yet?</p>
+      <button class="btn-primary" onclick="openSearchWithQuery(document.getElementById('shelf-search-input').value.trim())">Search for &ldquo;${q}&rdquo;</button>
+    </div>`;
+    return;
+  }
+
+  if (!books.length) {
+    el.innerHTML = `<div class="shelf-empty">
+      <div class="shelf-empty-icon">📖</div>
+      <h3>Your shelf is empty</h3>
+      <p>Tap <strong>+</strong> to search for a book and start logging quotes.</p>
+    </div>`;
+    return;
+  }
+
+  el.innerHTML = books.map(book => {
+    const count = db.entries.filter(e => e.bookId === book.id && e.type === 'quote').length;
+    const coverHtml = book.cover
+      ? `<img class="book-cover" src="${book.cover}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+      : '';
+    const placeholderStyle = book.cover ? 'display:none' : '';
+    const selectedCls = (isDesktop() && currentBookId === book.id) ? ' selected' : '';
+    return `<div class="book-card${selectedCls}" onclick="openBook('${book.id}')">
+      <div class="book-cover-wrap">
+        ${coverHtml}
+        <div class="book-cover-placeholder" style="${placeholderStyle}">📗</div>
+      </div>
+      <div class="book-info">
+        <div>
+          <div class="book-title">${esc(book.title)}</div>
+          <div class="book-author">${esc(book.author)}</div>
+        </div>
+        <div class="book-meta">
+          <span class="quote-count">${count} quote${count !== 1 ? 's' : ''}</span>
+        </div>
+      </div>
+      <button class="btn-add-quick" onclick="event.stopPropagation();quickAddQuote('${book.id}')" title="Add quote">+</button>
+    </div>`;
+  }).join('');
+}
+
+function quickAddQuote(bookId) {
+  currentBookId = bookId;
+  openAddModal();
+}
+
+// ═══════════════════════════════════════════════
+// BOOK SEARCH
+// ═══════════════════════════════════════════════
+document.getElementById('search-input').addEventListener('input', function() {
+  if (manualFormActive) return;
+  clearTimeout(searchTimer);
+  const q = this.value.trim();
+  if (!q) {
+    document.getElementById('search-results').innerHTML = `<div class="search-hint"><div class="search-hint-icon">📚</div>Search for a book to add it to your shelf</div>`;
+    return;
+  }
+  document.getElementById('search-results').innerHTML = `<div class="spinner"><span class="spin">⟳</span> Searching…</div>`;
+  searchTimer = setTimeout(() => searchBooks(q), 400);
+});
+
+// Focus search input when screen is shown
+document.getElementById('screen-search').addEventListener('transitionend', () => {
+  if (document.getElementById('screen-search').classList.contains('active')) {
+    document.getElementById('search-input').focus();
+  }
+});
+
+function showScreen_orig(id) { showScreen(id); }
+// Patch to focus search
+const _showScreen = showScreen;
+
+async function findMetadata() {
+  db = loadData();
+  const book = db.books.find(b => b.id === currentBookId);
+  if (!book) return;
+
+  const modal = document.getElementById('modal-meta');
+  const body = document.getElementById('modal-meta-body');
+  body.innerHTML = `<div class="spinner"><span class="spin">⟳</span> Searching for "${esc(book.title)}"…</div>`;
+  openModalWithHistory('modal-meta');
+
+  const q = [book.title, book.author].filter(Boolean).join(' ');
+  const gbUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=8&fields=items(id,volumeInfo(title,authors,publishedDate,imageLinks))`;
+  const olUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=8&fields=key,title,author_name,first_publish_year,cover_i,cover_edition_key`;
+
+  const [gbResult, olResult] = await Promise.allSettled([
+    fetch(gbUrl).then(r => r.json()).catch(() => null),
+    fetch(olUrl).then(r => r.json()).catch(() => null)
+  ]);
+
+  const gbItems = (gbResult.status === 'fulfilled' && gbResult.value?.items) ? gbResult.value.items.map(normaliseGoogle) : [];
+  const olItems = (olResult.status === 'fulfilled' && olResult.value?.docs) ? olResult.value.docs.map(normaliseOL) : [];
+  const merged = dedupeResults([...gbItems, ...olItems]).filter(i => i.title);
+
+  if (!merged.length) {
+    body.innerHTML = `<div class="search-hint">No matches found. Try editing the book title and searching again.</div>`;
+    return;
+  }
+
+  body.innerHTML = `<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Select the correct edition to import its cover and metadata:</div>` +
+    merged.map(item => {
+      const payload = JSON.stringify({ googleId: item.id, title: item.title, author: item.author, year: item.year, cover: item.cover }).replace(/'/g, '&#39;');
+      const coverHtml = item.cover
+        ? `<img class="meta-candidate-cover" src="${item.cover}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="meta-candidate-placeholder" style="display:none">📗</div>`
+        : `<div class="meta-candidate-placeholder">📗</div>`;
+      return `<div class="meta-candidate" onclick='importMetadata(${payload})'>
+        ${coverHtml}
+        <div class="meta-candidate-info">
+          <div class="meta-candidate-title">${esc(item.title)}</div>
+          ${item.author ? `<div class="meta-candidate-author">${esc(item.author)}</div>` : ''}
+          ${item.year ? `<div class="meta-candidate-year">${item.year}</div>` : ''}
+          <div style="font-size:11px;color:var(--warm-mid);margin-top:2px">${item.source}</div>
+        </div>
+        <div class="meta-check">›</div>
+      </div>`;
+    }).join('');
+}
+
+function importMetadata(payload) {
+  db = loadData();
+  const book = db.books.find(b => b.id === currentBookId);
+  if (!book) return;
+  const updates = { googleId: payload.googleId, cover: payload.cover };
+  if (payload.author) updates.author = payload.author;
+  if (payload.year) updates.year = payload.year;
+  applyOp('update-book', currentBookId, updates);
+  db = loadData();
+  history.back();
+  showToast('Metadata imported!');
+  renderBookDetail();
+}
+
+// ── Normalise a Google Books item ──────────────────────────────
+function normaliseGoogle(item) {
+  const v = item.volumeInfo || {};
+  const cover = (v.imageLinks ? (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail || '') : '').replace('http://', 'https://');
+  return {
+    id: 'gb_' + item.id,
+    title: v.title || '',
+    author: (v.authors || []).join(', '),
+    year: v.publishedDate ? v.publishedDate.substring(0, 4) : '',
+    cover,
+    source: 'Google Books'
+  };
+}
+
+// ── Normalise an Open Library doc ──────────────────────────────
+function normaliseOL(doc) {
+  const coverId = doc.cover_i || (doc.cover_edition_key ? null : null);
+  const cover = coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : '';
+  return {
+    id: 'ol_' + (doc.key || doc.cover_edition_key || Math.random()),
+    title: doc.title || '',
+    author: (doc.author_name || []).join(', '),
+    year: doc.first_publish_year ? String(doc.first_publish_year) : '',
+    cover,
+    source: 'Open Library'
+  };
+}
+
+// ── Deduplicate by title+author similarity ──────────────────────
+function dedupeResults(items) {
+  const seen = new Set();
+  return items.filter(item => {
+    const key = (item.title + '|' + item.author).toLowerCase().replace(/\s+/g, ' ').trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function searchBooks(q) {
+  const el = document.getElementById('search-results');
+  el.innerHTML = `<div class="spinner"><span class="spin">⟳</span> Searching…</div>`;
+
+  const gbUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=12&fields=items(id,volumeInfo(title,authors,publishedDate,imageLinks))`;
+  const olUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=12&fields=key,title,author_name,first_publish_year,cover_i,cover_edition_key`;
+
+  const [gbResult, olResult] = await Promise.allSettled([
+    fetch(gbUrl).then(r => r.json()).catch(() => null),
+    fetch(olUrl).then(r => r.json()).catch(() => null)
+  ]);
+
+  const gbItems = (gbResult.status === 'fulfilled' && gbResult.value?.items) ? gbResult.value.items.map(normaliseGoogle) : [];
+  const olItems = (olResult.status === 'fulfilled' && olResult.value?.docs) ? olResult.value.docs.map(normaliseOL) : [];
+
+  // Interleave: GB first, then OL items not already covered
+  const merged = dedupeResults([...gbItems, ...olItems]).filter(i => i.title);
+
+  if (!merged.length) {
+    el.innerHTML = `<div class="search-hint"><div class="search-hint-icon">🔍</div>No books found. Try a different search.</div>` + manualEntryFooter();
+    return;
+  }
+  renderSearchResults(merged);
+}
+
+function manualEntryFooter(prefillTitle) {
+  const titleVal = prefillTitle ? prefillTitle.replace(/"/g, '&quot;') : '';
+  return `<div class="manual-add-bar" onclick="showManualForm()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+    </svg>
+    Can't find it? Add manually
+  </div>`;
+}
+
+function showManualForm() {
+  manualFormActive = true;
+  const q = document.getElementById('search-input').value.trim();
+  // Swap panels — search input is now hidden, no focus stealing
+  document.getElementById('search-panel').style.display = 'none';
+  const panel = document.getElementById('manual-panel');
+  panel.style.display = 'block';
+  // Pre-fill title from search query
+  document.getElementById('manual-title').value = q;
+  document.getElementById('manual-author').value = '';
+  document.getElementById('manual-year').value = '';
+  setTimeout(() => document.getElementById('manual-title').focus(), 100);
+}
+
+function hideManualPanel() {
+  manualFormActive = false;
+  document.getElementById('manual-panel').style.display = 'none';
+  document.getElementById('search-panel').style.display = 'flex';
+  // Re-run last search if there was one
+  const q = document.getElementById('search-input').value.trim();
+  if (q) searchBooks(q);
+  setTimeout(() => document.getElementById('search-input').focus(), 50);
+}
+
+function addBookManually() {
+  const title = (document.getElementById('manual-title').value || '').trim();
+  if (!title) { showToast('Please enter a title'); return; }
+  const author = (document.getElementById('manual-author').value || '').trim();
+  const year = (document.getElementById('manual-year').value || '').trim();
+  const bookId = 'b_' + Date.now();
+  applyOp('add-book', bookId, {
+    googleId: null,
+    title,
+    author: author || '',
+    year: year || '',
+    cover: '',
+    addedAt: Date.now()
+  });
+  setLastAccessed(bookId);
+  db = loadData();
+  showToast('Added to shelf!');
+  openBook(bookId);
+}
+
+function renderSearchResults(items) {
+  const el = document.getElementById('search-results');
+  el.innerHTML = items.map(item => {
+    const coverHtml = item.cover
+      ? `<img class="result-cover" src="${item.cover}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="result-cover-placeholder" style="display:none">📗</div>`
+      : `<div class="result-cover-placeholder">📗</div>`;
+    const bookData = JSON.stringify({ id: item.id, title: item.title, author: item.author, year: item.year, cover: item.cover }).replace(/'/g, '&#39;');
+    return `<div class="search-result-item" onclick='addBookFromSearch(${bookData})'>
+      ${coverHtml}
+      <div class="result-info">
+        <div class="result-title">${esc(item.title)}</div>
+        <div class="result-author">${esc(item.author)}</div>
+        ${item.year ? `<div class="result-year">${item.year}</div>` : ''}
+        <div style="font-size:11px;color:var(--warm-mid);margin-top:2px">${item.source}</div>
+      </div>
+    </div>`;
+  }).join('') + manualEntryFooter();
+}
+
+function addBookFromSearch(bookData) {
+  db = loadData();
+  // Check if already exists
+  const existing = db.books.find(b => b.googleId === bookData.id);
+  if (existing) {
+    showToast('Already on your shelf!');
+    openBook(existing.id);
+    return;
+  }
+  const bookId = 'b_' + Date.now();
+  applyOp('add-book', bookId, {
+    googleId: bookData.id,
+    title: bookData.title,
+    author: bookData.author,
+    year: bookData.year,
+    cover: bookData.cover,
+    addedAt: Date.now()
+  });
+  setLastAccessed(bookId);
+  db = loadData();
+  document.getElementById('search-input').value = '';
+  showToast('Added to shelf!');
+  openBook(bookId);
+}
+
+// ═══════════════════════════════════════════════
+// BOOK DETAIL
+// ═══════════════════════════════════════════════
+function renderBookDetail() {
+  db = loadData();
+  const book = db.books.find(b => b.id === currentBookId);
+  if (!book) return;
+
+  const coverHtml = book.cover
+    ? `<img class="book-hero-cover" src="${book.cover}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="book-hero-cover-placeholder" style="display:none">📗</div>`
+    : `<div class="book-hero-cover-placeholder" onclick="document.getElementById('cover-file').click()" title="Tap to set cover image">📗</div>`;
+  document.getElementById('book-hero').innerHTML = `
+    ${coverHtml}
+    <div class="book-hero-info">
+      <a class="book-hero-title" href="https://www.google.com/search?q=${encodeURIComponent(book.title + ' book')}" target="_blank">${esc(book.title)}</a>
+      <a class="book-hero-author" href="https://www.google.com/search?q=${encodeURIComponent(book.author)}" target="_blank">${esc(book.author)}</a>
+      ${book.year ? `<div class="book-hero-year">${book.year}</div>` : ''}
+      ${book.startedAt ? `<div class="book-hero-year">Started ${formatDate(book.startedAt)}</div>` : ''}
+      <div class="book-hero-actions">
+        <button class="meta-btn" onclick="openBookEdit()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+          Edit
+        </button>
+        <button class="meta-btn" onclick="findMetadata()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Find metadata
+        </button>
+      </div>
+    </div>`;
+
+  document.getElementById('modal-book-title').textContent = book.title;
+  renderBookContent();
+}
+
+function openBookEdit() {
+  db = loadData();
+  const book = db.books.find(b => b.id === currentBookId);
+  if (!book) return;
+  document.getElementById('edit-book-title').value = book.title || '';
+  document.getElementById('edit-book-author').value = book.author || '';
+  document.getElementById('edit-book-year').value = book.year || '';
+  document.getElementById('edit-book-started').value = book.startedAt
+    ? new Date(book.startedAt).toISOString().slice(0, 10) : '';
+  openModalWithHistory('modal-edit-book');
+}
+
+function saveBookEdit() {
+  db = loadData();
+  const book = db.books.find(b => b.id === currentBookId);
+  if (!book) return;
+  const startedVal = document.getElementById('edit-book-started').value;
+  applyOp('update-book', currentBookId, {
+    title: document.getElementById('edit-book-title').value.trim() || book.title,
+    author: document.getElementById('edit-book-author').value.trim(),
+    year: document.getElementById('edit-book-year').value.trim(),
+    startedAt: startedVal ? new Date(startedVal + 'T00:00:00').getTime() : ''
+  });
+  db = loadData();
+  history.back();
+  renderBookDetail();
+  renderShelf();
+  showToast('Book updated!');
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-quotes').classList.toggle('active', tab === 'quotes');
+  document.getElementById('tab-notes').classList.toggle('active', tab === 'notes');
+  renderBookContent();
+}
+
+function renderBookContent() {
+  db = loadData();
+  const type = currentTab === 'quotes' ? 'quote' : 'note';
+  const entries = db.entries.filter(e => e.bookId === currentBookId && e.type === type);
+  const el = document.getElementById('book-content');
+
+  if (!entries.length) {
+    el.innerHTML = `<div class="quotes-empty">
+      <div class="quotes-empty-icon">${type === 'quote' ? '💬' : '📝'}</div>
+      No ${currentTab} yet. Tap <strong>+</strong> to add one.
+    </div>`;
+    return;
+  }
+
+  const sorted = [...entries].sort((a,b) => b.createdAt - a.createdAt);
+
+  if (type === 'quote') {
+    el.innerHTML = `<div class="section-label">${entries.length} quote${entries.length !== 1 ? 's' : ''}</div>` +
+      sorted.map(e => `
+        <div class="quote-card" data-id="${e.id}" onclick="openEditModal('${e.id}')">
+          <button class="quote-delete" onclick="event.stopPropagation();deleteEntry('${e.id}')" title="Delete">✕</button>
+          <div class="quote-text">${esc(e.text)}</div>
+          ${e.location ? `<div class="quote-location">📍 ${esc(e.location)}</div>` : ''}
+          ${e.userAdded ? `<div class="quote-date">${formatDate(e.createdAt)}</div>` : ''}
+          <button class="quote-copy" onclick="event.stopPropagation();copyQuote('${e.id}')" title="Copy quote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
+        </div>`).join('');
+  } else {
+    el.innerHTML = `<div class="section-label">${entries.length} note${entries.length !== 1 ? 's' : ''}</div>` +
+      sorted.map(e => `
+        <div class="note-card" data-id="${e.id}" onclick="openEditModal('${e.id}')">
+          <button class="note-delete" onclick="event.stopPropagation();deleteEntry('${e.id}')" title="Delete">✕</button>
+          <div class="note-text">${esc(e.text)}</div>
+          ${e.userAdded ? `<div class="note-date">${formatDate(e.createdAt)}</div>` : ''}
+        </div>`).join('');
+  }
+}
+
+function deleteCurrentBook() {
+  db = loadData();
+  const book = db.books.find(b => b.id === currentBookId);
+  if (!book) return;
+  if (!confirm(`Remove "${book.title}" and all its quotes from your shelf?`)) return;
+  const entriesToDelete = db.entries.filter(e => e.bookId === currentBookId);
+  const ops = entriesToDelete.map(e => ({ opType: 'delete-entry', entityId: e.id, data: {} }));
+  ops.push({ opType: 'delete-book', entityId: currentBookId, data: {} });
+  applyOps(ops);
+  db = loadData();
+  showScreen('screen-shelf');
+}
+
+function copyQuote(id) {
+  db = loadData();
+  const entry = db.entries.find(e => e.id === id);
+  if (!entry) return;
+  const book = db.books.find(b => b.id === entry.bookId);
+  const source = book ? `\n— ${book.title}${book.author ? ', ' + book.author : ''}` : '';
+  navigator.clipboard.writeText(`"${entry.text}"${source}`)
+    .then(() => showToast('Copied!'))
+    .catch(() => showToast('Could not copy'));
+}
+
+function deleteEntry(id) {
+  db = loadData();
+  const entry = db.entries.find(e => e.id === id);
+  if (!entry) return;
+  const label = entry.type === 'quote' ? 'quote' : 'note';
+  const preview = entry.text.length > 60 ? entry.text.substring(0, 60) + '…' : entry.text;
+  if (!confirm(`Delete this ${label}?\n\n"${preview}"`)) return;
+  applyOp('delete-entry', id, {});
+  db = loadData();
+  renderBookContent();
+  renderShelf();
+}
+
+// ═══════════════════════════════════════════════
+// ADD MODAL
+// ═══════════════════════════════════════════════
+function openAddModal() {
+  editingEntryId = null;
+  entryType = 'quote';
+  setType('quote');
+  document.getElementById('entry-text').value = '';
+  document.getElementById('entry-location').value = '';
+  openModalWithHistory('modal-add');
+  document.querySelector('.type-toggle').style.display = '';
+  updateOCRVisibility();
+  populateLocationSuggestions();
+  setTimeout(() => document.getElementById('entry-text').focus(), 200);
+
+  // Set modal title to book name
+  if (currentBookId) {
+    db = loadData();
+    const book = db.books.find(b => b.id === currentBookId);
+    if (book) document.getElementById('modal-book-title').textContent = book.title.length > 28 ? book.title.substring(0,28) + '…' : book.title;
+  }
+}
+
+function openEditModal(id) {
+  db = loadData();
+  const entry = db.entries.find(e => e.id === id);
+  if (!entry) return;
+
+  editingEntryId = id;
+  currentBookId = entry.bookId;
+  entryType = entry.type;
+  setType(entry.type);
+
+  document.getElementById('entry-text').value = entry.text;
+  document.getElementById('entry-location').value = entry.location || '';
+  document.querySelector('.type-toggle').style.display = 'none';
+  document.getElementById('modal-book-title').textContent = 'Edit ' + (entry.type === 'quote' ? 'Quote' : 'Note');
+  document.getElementById('btn-save').textContent = 'Save Changes';
+  openModalWithHistory('modal-add');
+  updateOCRVisibility();
+  populateLocationSuggestions();
+  setTimeout(() => document.getElementById('entry-text').focus(), 200);
+}
+
+function closeModal() {
+  if (_closingViaPopstate) {
+    closeModalDirect('modal-add');
+  } else {
+    history.back();
+  }
+  editingEntryId = null;
+}
+
+function setType(type) {
+  entryType = type;
+  document.getElementById('type-quote').classList.toggle('active', type === 'quote');
+  document.getElementById('type-note').classList.toggle('active', type === 'note');
+  document.getElementById('text-label').textContent = type === 'quote' ? 'Quote text' : 'Your note';
+  document.getElementById('entry-text').placeholder = type === 'quote' ? 'Paste or type the quote…' : 'Write your thought…';
+  document.getElementById('location-group').style.display = type === 'quote' ? '' : 'none';
+  if (!editingEntryId) document.getElementById('btn-save').textContent = type === 'quote' ? 'Save Quote' : 'Save Note';
+  updateOCRVisibility();
+}
+
+function saveEntry() {
+  const text = document.getElementById('entry-text').value.trim();
+  if (!text) { showToast('Please enter some text'); return; }
+
+  db = loadData();
+
+  if (!currentBookId) { showToast('No book selected'); return; }
+
+  if (editingEntryId) {
+    const entry = db.entries.find(e => e.id === editingEntryId);
+    if (!entry) { showToast('Entry not found'); return; }
+    applyOp('update-entry', editingEntryId, {
+      text,
+      location: entryType === 'quote' ? document.getElementById('entry-location').value.trim() : ''
+    });
+    db = loadData();
+    closeModal();
+    showToast('Changes saved!');
+  } else {
+    const entryId = 'e_' + Date.now();
+    const now = Date.now();
+    applyOp('add-entry', entryId, {
+      bookId: currentBookId,
+      type: entryType,
+      text,
+      location: entryType === 'quote' ? document.getElementById('entry-location').value.trim() : '',
+      createdAt: now,
+      userAdded: true
+    });
+    setLastAccessed(currentBookId);
+    const book = db.books.find(b => b.id === currentBookId);
+    if (book && !book.startedAt) {
+      applyOp('update-book', currentBookId, { startedAt: now });
+    }
+    db = loadData();
+    closeModal();
+    showToast(`${entryType === 'quote' ? 'Quote' : 'Note'} saved!`);
+  }
+
+  if (document.getElementById('screen-book').classList.contains('active')) {
+    switchTab(entryType === 'quote' ? 'quotes' : 'notes');
+  }
+}
+
+function populateLocationSuggestions() {
+  const container = document.getElementById('location-suggestions');
+  if (!currentBookId) { container.innerHTML = ''; return; }
+  db = loadData();
+  const locations = [...new Set(
+    db.entries
+      .filter(e => e.bookId === currentBookId && e.type === 'quote' && e.location)
+      .map(e => e.location)
+  )];
+  if (!locations.length) { container.innerHTML = ''; return; }
+  container.innerHTML = `<div class="location-suggestions-list">
+    <div class="location-suggestions-label">Previous locations</div>
+    ${locations.map(loc =>
+      `<button class="location-suggestion" type="button" onclick="document.getElementById('entry-location').value = this.textContent; document.getElementById('entry-location').focus()">${esc(loc)}</button>`
+    ).join('')}
+  </div>`;
+}
+
+// Close modals on overlay click
+document.getElementById('modal-add').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+document.getElementById('modal-meta').addEventListener('click', function(e) {
+  if (e.target === this) history.back();
+});
+
+// ═══════════════════════════════════════════════
+// ALL QUOTES SEARCH
+// ═══════════════════════════════════════════════
+function renderAllQuotes() {
+  db = loadData();
+  const q = (document.getElementById('search-quotes-input').value || '').toLowerCase().trim();
+  const el = document.getElementById('all-quotes-list');
+
+  let entries = db.entries.filter(e => e.type === 'quote');
+  if (q) {
+    entries = entries.filter(e => {
+      const book = db.books.find(b => b.id === e.bookId);
+      return e.text.toLowerCase().includes(q) ||
+        (book && (book.title.toLowerCase().includes(q) || book.author.toLowerCase().includes(q)));
+    });
+  }
+
+  if (!entries.length) {
+    el.innerHTML = `<div class="quotes-empty"><div class="quotes-empty-icon">🔍</div>${q ? 'No quotes match your search.' : 'No quotes yet.'}</div>`;
+    return;
+  }
+
+  const sorted = [...entries].sort((a,b) => b.createdAt - a.createdAt);
+  el.innerHTML = sorted.map(e => {
+    const book = db.books.find(b => b.id === e.bookId);
+    return `<div class="quote-card" onclick="openBook('${e.bookId}')" style="cursor:pointer">
+      <div class="quote-text">${esc(e.text)}</div>
+      ${e.location ? `<div class="quote-location">📍 ${esc(e.location)}</div>` : ''}
+      ${book ? `<div class="quote-book-ref">— ${esc(book.title)}, ${esc(book.author)}</div>` : ''}
+      ${e.userAdded ? `<div class="quote-date">${formatDate(e.createdAt)}</div>` : ''}
+      <button class="quote-copy" onclick="event.stopPropagation();copyQuote('${e.id}')" title="Copy quote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════
+function esc(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatDate(ts) {
+  const d = new Date(ts);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+
+
+const GH_SETTINGS_KEY = 'marginalia_gh_settings';
+const DEVICE_OPS_SHA_KEY = 'marginalia_device_ops_sha';
+let deviceOpsSha = USE_LS ? localStorage.getItem(DEVICE_OPS_SHA_KEY) : null;
+let syncLogLines = [];
+let walVerified = false; // set true after initSync confirms ops/ exists
+
+function loadGHSettings() {
+  try { return JSON.parse(localStorage.getItem(GH_SETTINGS_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveGHSettings(s) { localStorage.setItem(GH_SETTINGS_KEY, JSON.stringify(s)); }
+
+function ghConfigured() {
+  const s = loadGHSettings();
+  return s.username && s.repo && s.token;
+}
+
+function addSyncLog(msg) {
+  const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  syncLogLines.unshift(`${time}  ${msg}`);
+  if (syncLogLines.length > 30) syncLogLines.pop();
+  const el = document.getElementById('sync-log');
+  if (el) el.textContent = syncLogLines.join('\n');
+}
+
+function setSyncStatus(state, label) {
+  const el = document.getElementById('sync-status');
+  const lbl = document.getElementById('sync-label');
+  if (!el || !lbl) return;
+  el.className = 'sync-status ' + state;
+  lbl.textContent = label;
+}
+
+async function ghRequest(method, path, body) {
+  const s = loadGHSettings();
+  const url = `https://api.github.com/repos/${s.username}/${s.repo}/contents/${path}`;
+  const opts = {
+    method,
+    headers: {
+      'Authorization': `token ${s.token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/vnd.github.v3+json'
+    }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(url, opts);
+  return { ok: res.ok, status: res.status, data: await res.json() };
+}
+
+// ── WAL Sync: Push this device's ops ────────────────
+async function syncPush() {
+  if (!ghConfigured()) return;
+  if (!deviceOps.length) return;
+  setSyncStatus('syncing', '⟳ syncing');
+  try {
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify(deviceOps, null, 2))));
+    const body = {
+      message: `ops/${DEVICE_ID}: ${new Date().toISOString().substring(0, 16).replace('T', ' ')}`,
+      content,
+      ...(deviceOpsSha ? { sha: deviceOpsSha } : {})
+    };
+    const res = await ghRequest('PUT', `ops/${DEVICE_ID}.json`, body);
+    if (res.ok) {
+      deviceOpsSha = res.data.content.sha;
+      if (USE_LS) localStorage.setItem(DEVICE_OPS_SHA_KEY, deviceOpsSha);
+      setSyncStatus('ok', '✓ synced');
+      addSyncLog('✓ Pushed ops to GitHub');
+    } else if (res.status === 409) {
+      // SHA mismatch — re-fetch our file's SHA and retry
+      addSyncLog('⚠ SHA conflict on push, re-fetching…');
+      const latest = await ghRequest('GET', `ops/${DEVICE_ID}.json`);
+      if (latest.ok) {
+        deviceOpsSha = latest.data.sha;
+        if (USE_LS) localStorage.setItem(DEVICE_OPS_SHA_KEY, deviceOpsSha);
+      }
+      // Retry once
+      const content2 = btoa(unescape(encodeURIComponent(JSON.stringify(deviceOps, null, 2))));
+      const body2 = {
+        message: `ops/${DEVICE_ID}: ${new Date().toISOString().substring(0, 16).replace('T', ' ')}`,
+        content: content2,
+        ...(deviceOpsSha ? { sha: deviceOpsSha } : {})
+      };
+      const res2 = await ghRequest('PUT', `ops/${DEVICE_ID}.json`, body2);
+      if (res2.ok) {
+        deviceOpsSha = res2.data.content.sha;
+        if (USE_LS) localStorage.setItem(DEVICE_OPS_SHA_KEY, deviceOpsSha);
+        setSyncStatus('ok', '✓ synced');
+        addSyncLog('✓ Pushed ops (retry)');
+      } else {
+        setSyncStatus('error', '✗ error');
+        addSyncLog(`✗ Push retry failed: ${res2.data.message || res2.status}`);
+      }
+    } else if (res.status === 422) {
+      // File doesn't exist yet and no SHA needed — sometimes GitHub returns 422 on first create
+      // Try without SHA
+      const body3 = {
+        message: `ops/${DEVICE_ID}: ${new Date().toISOString().substring(0, 16).replace('T', ' ')}`,
+        content
+      };
+      const res3 = await ghRequest('PUT', `ops/${DEVICE_ID}.json`, body3);
+      if (res3.ok) {
+        deviceOpsSha = res3.data.content.sha;
+        if (USE_LS) localStorage.setItem(DEVICE_OPS_SHA_KEY, deviceOpsSha);
+        setSyncStatus('ok', '✓ synced');
+        addSyncLog('✓ Pushed ops (created)');
+      } else {
+        setSyncStatus('error', '✗ error');
+        addSyncLog(`✗ Push failed: ${res3.data.message || res3.status}`);
+      }
+    } else {
+      setSyncStatus('error', '✗ error');
+      addSyncLog(`✗ Push failed: ${res.data.message || res.status}`);
+    }
+  } catch(e) {
+    setSyncStatus('error', '✗ offline');
+    addSyncLog(`✗ Push error: ${e.message}`);
+  }
+}
+
+// ── WAL Sync: Pull all devices' ops ─────────────────
+async function syncPull(silent) {
+  if (!ghConfigured()) return;
+  if (!silent) setSyncStatus('syncing', '⟳ pulling');
+  try {
+    // List ops/ directory
+    const dirRes = await ghRequest('GET', 'ops');
+    if (!dirRes.ok) {
+      if (dirRes.status === 404) {
+        if (!silent) {
+          setSyncStatus('error', '✗ no WAL');
+          addSyncLog('✗ ops/ directory not found. Run migration first.');
+          showToast('WAL data not found. Run the migration tool first.');
+        }
+        return false;
+      }
+      if (!silent) {
+        setSyncStatus('error', '✗ error');
+        addSyncLog(`✗ Pull failed: ${dirRes.data.message || dirRes.status}`);
+      }
+      return false;
+    }
+
+    walVerified = true;
+    const opFiles = dirRes.data.filter(f => f.name.endsWith('.json'));
+    addSyncLog(`Found ${opFiles.length} file(s)`);
+
+    // If our device file was deleted (e.g. by compaction), clear stale SHA
+    if (!opFiles.find(f => f.name === `${DEVICE_ID}.json`)) {
+      deviceOpsSha = null;
+      if (USE_LS) localStorage.removeItem(DEVICE_OPS_SHA_KEY);
+    }
+
+    // Fetch all op files in parallel
+    const fetches = opFiles.map(async (f) => {
+      const res = await ghRequest('GET', `ops/${f.name}`);
+      if (!res.ok) return [];
+      if (f.name === `${DEVICE_ID}.json`) {
+        deviceOpsSha = res.data.sha;
+        if (USE_LS) localStorage.setItem(DEVICE_OPS_SHA_KEY, deviceOpsSha);
+      }
+      const content = JSON.parse(decodeURIComponent(escape(atob(res.data.content.replace(/\n/g, '')))));
+      return Array.isArray(content) ? content : [];
+    });
+
+    const allArrays = await Promise.all(fetches);
+    let allOps = allArrays.flat();
+
+    // Check for compaction marker
+    const compactionMarker = allOps.find(op => op.op === 'compaction');
+    const compactedAt = compactionMarker ? compactionMarker.data.compactedAt : null;
+    if (compactedAt) {
+      allOps = allOps.filter(op => op.deviceId === 'compacted' || op.ts > compactedAt);
+    }
+
+    // Dedupe by opId
+    const seen = new Set();
+    allOps = allOps.filter(op => {
+      if (seen.has(op.opId)) return false;
+      seen.add(op.opId);
+      return true;
+    });
+
+    // Merge with local ops not yet on remote
+    const remoteOpIds = new Set(allOps.map(op => op.opId));
+    for (const op of localOps) {
+      if (!remoteOpIds.has(op.opId)) {
+        if (compactedAt && op.ts <= compactedAt && op.deviceId !== 'compacted') continue;
+        allOps.push(op);
+      }
+    }
+
+    localOps = allOps;
+    deviceOps = localOps.filter(op => op.deviceId === DEVICE_ID);
+    materializedCache = null;
+    saveOpsToStorage();
+    db = loadData();
+
+    if (!silent) {
+      setSyncStatus('ok', '✓ synced');
+      addSyncLog(`✓ Pulled ${allOps.length} ops from ${allFiles.length} file(s)`);
+      renderShelf();
+      showToast('Data pulled from GitHub');
+    } else {
+      setSyncStatus('ok', '✓ synced');
+      addSyncLog('✓ Pulled latest ops');
+    }
+    return true;
+  } catch(e) {
+    if (!silent) {
+      setSyncStatus('error', '✗ offline');
+      addSyncLog(`✗ Pull error: ${e.message}`);
+    }
+    return false;
+  }
+}
+
+async function syncNow() {
+  await syncPull(false);
+  await syncPush();
+}
+
+// ── WAL Compaction ─────────────────────────────────
+async function compactOps() {
+  if (!ghConfigured()) { showToast('GitHub not configured'); return; }
+  if (!confirm('Compact the op log? This replaces all op files with a single snapshot. Other devices will sync to the compacted state automatically.')) return;
+
+  setSyncStatus('syncing', '⟳ compacting');
+  addSyncLog('Starting compaction…');
+
+  try {
+    // 1. Pull latest from all devices
+    await syncPull(true);
+
+    // 2. Materialize current state
+    const state = materialize(localOps);
+    const compactedAt = Date.now();
+
+    // 3. Build compacted ops array (marker + synthetic add ops)
+    const compactedOps = [];
+    let seq = 0;
+    // Compaction marker — tells syncPull to drop pre-compaction ops
+    compactedOps.push({
+      opId: `compacted_${String(compactedAt).padStart(13, '0')}_marker`,
+      op: 'compaction',
+      entityId: '',
+      data: { compactedAt },
+      ts: compactedAt,
+      deviceId: 'compacted'
+    });
+    for (const book of state.books) {
+      const { id, lastAccessed, ...fields } = book;
+      compactedOps.push({
+        opId: `compacted_${String(compactedAt).padStart(13, '0')}_${String(seq++).padStart(4, '0')}`,
+        op: 'add-book',
+        entityId: id,
+        data: fields,
+        ts: compactedAt,
+        deviceId: 'compacted'
+      });
+    }
+    for (const entry of state.entries) {
+      const { id, ...fields } = entry;
+      compactedOps.push({
+        opId: `compacted_${String(compactedAt).padStart(13, '0')}_${String(seq++).padStart(4, '0')}`,
+        op: 'add-entry',
+        entityId: id,
+        data: fields,
+        ts: compactedAt,
+        deviceId: 'compacted'
+      });
+    }
+
+    // 4. Get current ops/ directory listing for SHAs
+    const dirRes = await ghRequest('GET', 'ops');
+    if (!dirRes.ok) throw new Error(`Failed to list ops/: ${dirRes.status}`);
+    const files = dirRes.data.filter(f => f.name.endsWith('.json'));
+    const migrationFile = files.find(f => f.name === 'migration.json');
+    if (!migrationFile) throw new Error('ops/migration.json not found — nothing to compact into');
+
+    // 5. Overwrite migration.json with compacted ops
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify(compactedOps, null, 2))));
+    const writeRes = await ghRequest('PUT', 'ops/migration.json', {
+      message: `compaction: ${state.books.length} books, ${state.entries.length} entries`,
+      content,
+      sha: migrationFile.sha
+    });
+    if (!writeRes.ok) throw new Error(`Failed to write migration.json: ${writeRes.status} ${writeRes.data?.message || ''}`);
+    addSyncLog('✓ Wrote compacted ops to migration.json');
+
+    // 6. Update snapshot.json
+    const snapBooks = state.books.map(b => { const { lastAccessed, ...rest } = b; return rest; });
+    const snapshot = { books: snapBooks, entries: state.entries };
+    const existingSnap = await ghRequest('GET', 'snapshot.json');
+    const snapSha = existingSnap.ok ? existingSnap.data.sha : null;
+    const snapContent = btoa(unescape(encodeURIComponent(JSON.stringify(snapshot, null, 2))));
+    const snapRes = await ghRequest('PUT', 'snapshot.json', {
+      message: 'compaction: update snapshot',
+      content: snapContent,
+      ...(snapSha ? { sha: snapSha } : {})
+    });
+    if (snapRes.ok) addSyncLog('✓ Updated snapshot.json');
+
+    // 7. Delete device op files (keep migration.json)
+    for (const f of files) {
+      if (f.name === 'migration.json' || !f.name.endsWith('.json')) continue;
+      const delRes = await ghRequest('DELETE', `ops/${f.name}`, {
+        message: `compaction: remove ${f.name}`,
+        sha: f.sha
+      });
+      if (delRes.ok) addSyncLog(`Deleted ops/${f.name}`);
+    }
+
+    // 8. Update local state
+    localOps = compactedOps;
+    deviceOps = [];
+    deviceOpsSha = null;
+    if (USE_LS) localStorage.removeItem(DEVICE_OPS_SHA_KEY);
+    materializedCache = null;
+    saveOpsToStorage();
+    db = loadData();
+
+    setSyncStatus('ok', '✓ compacted');
+    addSyncLog(`✓ Compacted: ${state.books.length} books, ${state.entries.length} entries`);
+    showToast('Op log compacted');
+    renderShelf();
+    updateCompactInfo();
+
+  } catch(e) {
+    setSyncStatus('error', '✗ error');
+    addSyncLog(`✗ Compaction failed: ${e.message}`);
+    showToast('Compaction failed — see sync log');
+  }
+}
+
+function updateCompactInfo() {
+  const el = document.getElementById('compact-stats');
+  if (!el) return;
+  const opCount = localOps.length;
+  const isCompacted = localOps.some(op => op.deviceId === 'compacted');
+  const devices = new Set(localOps.map(op => op.deviceId));
+  el.textContent = `${opCount} ops across ${devices.size} source(s)${isCompacted ? ' (compacted)' : ''}`;
+  el.parentElement.style.display = '';
+}
+
+async function saveGitHubSettings() {
+  const username = document.getElementById('gh-username').value.trim();
+  const repo = document.getElementById('gh-repo').value.trim() || 'book-quotes';
+  const token = document.getElementById('gh-token').value.trim();
+  if (!username || !token) { showToast('Please fill in username and token'); return; }
+  saveGHSettings({ username, repo, token });
+
+  const row = document.getElementById('gh-status-row');
+  const msg = document.getElementById('gh-status-msg');
+  row.style.display = 'flex';
+  msg.textContent = 'Testing connection…';
+  addSyncLog('Testing GitHub connection…');
+
+  try {
+    const s = loadGHSettings();
+    const res = await fetch(`https://api.github.com/repos/${s.username}/${s.repo}`, {
+      headers: { 'Authorization': `token ${s.token}`, 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (res.ok) {
+      msg.textContent = '✓ Connected! Performing initial sync…';
+      addSyncLog(`✓ Connected to ${s.username}/${s.repo}`);
+      updateSettingsFields();
+      const pulled = await syncPull(true);
+      if (!pulled) {
+        msg.textContent = '✗ WAL data not found. Run the migration tool first.';
+        setSyncStatus('error', '✗ no WAL');
+        return;
+      }
+      if (deviceOps.length) await syncPush();
+      msg.textContent = '✓ Connected and synced!';
+      setSyncStatus('ok', '✓ synced');
+      renderShelf();
+    } else {
+      const err = await res.json();
+      msg.textContent = `✗ Error: ${err.message}`;
+      addSyncLog(`✗ Connection failed: ${err.message}`);
+      setSyncStatus('error', '✗ error');
+    }
+  } catch(e) {
+    msg.textContent = `✗ Network error: ${e.message}`;
+    addSyncLog(`✗ Network error: ${e.message}`);
+    setSyncStatus('error', '✗ offline');
+  }
+}
+
+function disconnectGitHub() {
+  if (!confirm('Disconnect GitHub sync? Your local data will not be affected.')) return;
+  localStorage.removeItem(GH_SETTINGS_KEY);
+  localStorage.removeItem(DEVICE_OPS_SHA_KEY);
+  deviceOpsSha = null;
+  walVerified = false;
+  setSyncStatus('', 'local');
+  updateSettingsFields();
+  addSyncLog('Disconnected from GitHub');
+  showToast('GitHub disconnected');
+}
+
+function updateSettingsFields() {
+  const s = loadGHSettings();
+  const u = document.getElementById('gh-username');
+  const r = document.getElementById('gh-repo');
+  const t = document.getElementById('gh-token');
+  if (u) u.value = s.username || '';
+  if (r) r.value = s.repo || 'book-quotes';
+  if (t) t.value = s.token || '';
+  // OCR settings
+  const eng = document.getElementById('ocr-engine');
+  if (eng) eng.value = loadOCREngine();
+  const gkg = document.getElementById('gemini-key-group');
+  if (gkg) gkg.style.display = loadOCREngine() === 'gemini' ? '' : 'none';
+  const gk = document.getElementById('gemini-key');
+  if (gk) gk.value = loadGeminiKey() || '';
+  const forgetBtn = document.getElementById('btn-forget-gemini');
+  if (forgetBtn) forgetBtn.style.display = loadGeminiKey() ? '' : 'none';
+  updateCompactInfo();
+}
+
+// ── Gemini OCR ──
+const GEMINI_SETTINGS_KEY = 'marginalia_gemini_key';
+
+function loadGeminiKey() {
+  return localStorage.getItem(GEMINI_SETTINGS_KEY) || '';
+}
+function saveGeminiKey(key) {
+  if (key) localStorage.setItem(GEMINI_SETTINGS_KEY, key);
+  else localStorage.removeItem(GEMINI_SETTINGS_KEY);
+}
+function geminiConfigured() { return !!loadGeminiKey(); }
+
+async function saveGeminiSettings() {
+  const key = document.getElementById('gemini-key').value.trim();
+  if (!key) { showToast('Please enter an API key'); return; }
+  saveGeminiKey(key);
+
+  const row = document.getElementById('gemini-status-row');
+  const msg = document.getElementById('gemini-status-msg');
+  row.style.display = 'flex';
+  msg.textContent = 'Testing key…';
+
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${encodeURIComponent(key)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: 'Reply with just the word OK.' }] }] })
+    });
+    if (res.ok) {
+      msg.textContent = '✓ Key is valid!';
+      updateSettingsFields();
+    } else {
+      const err = await res.json();
+      msg.textContent = `✗ Error: ${err.error?.message || 'Invalid key'}`;
+      saveGeminiKey('');
+    }
+  } catch(e) {
+    msg.textContent = `✗ Network error: ${e.message}`;
+    saveGeminiKey('');
+  }
+}
+
+function forgetGeminiKey() {
+  saveGeminiKey('');
+  document.getElementById('gemini-key').value = '';
+  document.getElementById('gemini-status-row').style.display = 'none';
+  document.getElementById('btn-forget-gemini').style.display = 'none';
+  showToast('Gemini key removed');
+}
+
+function updateOCRVisibility() {
+  const row = document.getElementById('ocr-row');
+  if (row) row.style.display = entryType === 'quote' ? '' : 'none';
+}
+
+const OCR_ENGINE_KEY = 'marginalia_ocr_engine';
+function loadOCREngine() { return localStorage.getItem(OCR_ENGINE_KEY) || 'tesseract'; }
+function saveOCREngine(val) {
+  localStorage.setItem(OCR_ENGINE_KEY, val);
+  document.getElementById('gemini-key-group').style.display = val === 'gemini' ? '' : 'none';
+}
+
+let activeOCRBtn = null;
+
+function startOCR(mode) {
+  const input = document.getElementById(mode === 'camera' ? 'ocr-camera' : 'ocr-file');
+  activeOCRBtn = document.getElementById(mode === 'camera' ? 'btn-ocr-camera' : 'btn-ocr-file');
+  input.value = '';
+  input.click();
+}
+
+function handleOCRFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  processOCR(file);
+}
+
+document.getElementById('ocr-camera').addEventListener('change', handleOCRFile);
+document.getElementById('ocr-file').addEventListener('change', handleOCRFile);
+
+document.getElementById('cover-file').addEventListener('change', async function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+  try {
+    const canvas = await downscaleImage(file, 400);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    applyOp('update-book', currentBookId, { cover: dataUrl });
+    db = loadData();
+    renderBookDetail();
+    renderShelf();
+    showToast('Cover image set!');
+  } catch (err) {
+    showToast('Could not load image');
+  }
+});
+
+function downscaleImage(file, maxPx) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxPx || height > maxPx) {
+        const scale = maxPx / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(canvas);
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function ocrWithTesseract(file) {
+  const canvas = await downscaleImage(file, 1500);
+  const { data } = await Tesseract.recognize(canvas, 'eng');
+  return data.text?.trim();
+}
+
+async function ocrWithGemini(file) {
+  const canvas = await downscaleImage(file, 1024);
+  const base64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+  const key = loadGeminiKey();
+  if (!key) throw new Error('Gemini API key not configured');
+
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [
+        { inlineData: { mimeType: 'image/jpeg', data: base64 } },
+        { text: 'You are an OCR assistive tool helping a visually impaired user transcribe their own personal reading notes. Please read the text visible in this photo and transcribe it exactly. The page background will be white or black — if you see text with a colored highlight (yellow, blue, green, etc.) over it, transcribe ONLY the highlighted portion and ignore the rest. If nothing is highlighted, transcribe all visible text. Merge lines into natural paragraphs — do not insert line breaks where the original text simply wraps to the next line. Only preserve paragraph breaks where the author intended a new paragraph. Output only the transcribed text, nothing else.' }
+      ]}]
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || 'Gemini API error');
+  }
+
+  const data = await res.json();
+  console.log('Gemini response:', JSON.stringify(data, null, 2));
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const textPart = parts.find(p => p.text && !p.thought);
+  return textPart?.text?.trim();
+}
+
+function cleanOCRText(raw) {
+  return raw
+    .replace(/-\n/g, '')              // join hyphenated line breaks
+    .replace(/\n{2,}/g, '\n\n')       // normalize paragraph breaks
+    .replace(/(?<!\n)\n(?!\n)/g, ' ') // single newlines → spaces
+    .trim();
+}
+
+async function processOCR(file) {
+  const btn = activeOCRBtn || document.getElementById('btn-ocr-camera');
+  const origHTML = btn.innerHTML;
+  btn.disabled = true;
+  const engine = loadOCREngine();
+  btn.innerHTML = `<span class="spin">⟳</span> ${engine === 'gemini' ? 'Scanning…' : 'Reading text…'}`;
+
+  try {
+    const raw = engine === 'gemini' ? await ocrWithGemini(file) : await ocrWithTesseract(file);
+    const text = raw ? cleanOCRText(raw) : '';
+    if (text) {
+      document.getElementById('entry-text').value = text;
+      showToast('Quote extracted!');
+    } else {
+      showToast('No text found in image');
+    }
+  } catch(err) {
+    showToast('Scan failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origHTML;
+  }
+}
+
+// Auto-sync after every applyOp
+let syncDebounceTimer = null;
+function scheduleSyncPush() {
+  if (!ghConfigured()) return;
+  clearTimeout(syncDebounceTimer);
+  syncDebounceTimer = setTimeout(() => syncPush(), 1500);
+}
+
+// Init sync on load
+async function initSync() {
+  updateSettingsFields();
+  if (ghConfigured()) {
+    setSyncStatus('syncing', '⟳ syncing');
+    const pulled = await syncPull(true);
+    if (!pulled && !localOps.length) {
+      setSyncStatus('error', '✗ no WAL');
+      addSyncLog('✗ WAL data not found. Run the migration tool first.');
+    }
+    renderShelf();
+    if (deviceOps.length) await syncPush();
+  }
+}
+
+
+// ═══════════════════════════════════════════════
+// ASK CLAUDE
+// ═══════════════════════════════════════════════
+const AI_URLS = {
+  claude: 'https://claude.ai',
+  gemini: 'https://gemini.google.com'
+};
+
+function openAskAIModal() {
+  const quotes = db.entries.filter(e => e.type === 'quote');
+  if (!quotes.length) { showToast('No quotes to share yet.'); return; }
+  openModalWithHistory('modal-ask-ai');
+}
+
+function askAI(destination) {
+  history.back();
+
+  const quotes = db.entries.filter(e => e.type === 'quote');
+  const lines = quotes.map(e => {
+    const book = db.books.find(b => b.id === e.bookId);
+    const source = book ? `${book.title} by ${book.author}` : 'Unknown';
+    return `- "${e.text}" — ${source}`;
+  }).join('\n');
+
+  const prompt = `Here are all my saved book quotes:\n\n${lines}\n\nI'd love to discuss these with you. What patterns, themes, or ideas do you notice across them? Feel free to ask me questions too.`;
+
+  const url = AI_URLS[destination];
+  navigator.clipboard.writeText(prompt).then(() => {
+    showToast('Prompt copied — opening ' + (destination === 'claude' ? 'Claude' : 'Gemini'));
+    setTimeout(() => window.open(url, '_blank'), 600);
+  }).catch(() => {
+    const win = window.open(url, '_blank');
+    showToast('Prompt could not be copied — paste manually');
+  });
+}
+
+// ═══════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════
+renderShelf();
+history.replaceState({ screen: 'screen-shelf' }, '');
+if (isDesktop()) {
+  document.getElementById('detail-placeholder').classList.add('active');
+}
+
+// Handle crossing the desktop/mobile breakpoint
+const desktopMQ = window.matchMedia('(min-width: 1024px)');
+desktopMQ.addEventListener('change', (e) => {
+  const placeholder = document.getElementById('detail-placeholder');
+  if (e.matches) {
+    // Entered desktop: show shelf + placeholder (or keep current detail)
+    document.getElementById('screen-shelf').classList.add('active');
+    const hasDetail = document.querySelector('#panel-detail > .screen.active');
+    if (!hasDetail) placeholder.classList.add('active');
+  } else {
+    // Entered mobile: collapse to single active screen
+    placeholder.classList.remove('active');
+    const activeDetail = document.querySelector('#panel-detail > .screen.active');
+    if (activeDetail) {
+      // A detail screen is open — keep it, hide shelf
+      document.getElementById('screen-shelf').classList.remove('active');
+    }
+    // If no detail is open, shelf is already active
+  }
+});
+
+initSync();
+
+// ── Service Worker registration ──────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/apps/marginalia/sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
