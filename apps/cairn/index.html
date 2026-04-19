@@ -157,6 +157,46 @@
   .popup-val{font-family:var(--mono);color:var(--ink);font-weight:500;}
   .popup-elev-btn{margin-top:12px;width:100%;padding:8px;background:var(--md-primary-container);border:none;border-radius:var(--md-shape-md);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);color:var(--md-on-primary-container);transition:all .2s;}
   .popup-elev-btn:hover{background:var(--md-primary);color:var(--md-on-primary);box-shadow:var(--md-elevation-1);}
+
+  /* Sync status pill + header settings button */
+  .sync-status{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--md-inverse-primary);letter-spacing:.05em;padding:3px 8px;border-radius:var(--md-shape-full);cursor:pointer;transition:background .15s;text-transform:uppercase;}
+  .sync-status:hover{background:rgba(255,255,255,.1);}
+  .sync-status.syncing{color:#f0c040;}
+  .sync-status.error{color:#e07070;}
+  .sync-status.ok{color:#7ec87e;}
+  .sync-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0;}
+  .btn-icon{background:none;border:none;color:var(--md-inverse-on-surface);cursor:pointer;padding:6px;border-radius:var(--md-shape-full);display:flex;align-items:center;justify-content:center;transition:background .15s;}
+  .btn-icon:hover{background:rgba(255,255,255,.1);}
+  .btn-icon svg{width:18px;height:18px;}
+
+  /* Settings modal */
+  .modal-overlay{position:fixed;inset:0;background:rgba(33,26,20,0.55);z-index:2000;display:none;align-items:flex-start;justify-content:center;padding:60px 16px 16px;overflow-y:auto;}
+  .modal-overlay.open{display:flex;}
+  .modal-sheet{background:var(--md-surface);border-radius:var(--md-shape-lg);width:100%;max-width:520px;box-shadow:0 12px 36px rgba(0,0,0,.28);overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 80px);}
+  .modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0;}
+  .modal-title{font-family:var(--sans);font-size:17px;font-weight:500;color:var(--ink);}
+  .modal-close{background:none;border:none;color:var(--ink-soft);cursor:pointer;padding:6px;border-radius:var(--md-shape-full);width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:20px;line-height:1;}
+  .modal-close:hover{background:var(--md-surface-container-high);}
+  .modal-body{padding:16px 20px 20px;overflow-y:auto;flex:1;}
+  .settings-section{margin-bottom:20px;}
+  .settings-section:last-child{margin-bottom:0;}
+  .settings-section-title{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);margin-bottom:8px;font-weight:500;}
+  .settings-card{background:var(--paper);border-radius:var(--md-shape-md);padding:14px 16px;border:1px solid var(--border);}
+  .settings-hint{font-size:12px;color:var(--ink-soft);line-height:1.5;margin-bottom:12px;}
+  .settings-hint a{color:var(--accent);}
+  .field-group{margin-bottom:12px;}
+  .field-label{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin-bottom:5px;}
+  .text-input{width:100%;padding:9px 11px;background:var(--md-surface-container-lowest);border:1px solid var(--border);border-radius:var(--md-shape-sm);font-family:var(--mono);font-size:13px;color:var(--ink);outline:none;transition:border-color .15s;}
+  .text-input:focus{border-color:var(--accent);}
+  .btn-primary{width:100%;padding:10px;background:var(--accent);color:var(--md-on-primary);border:none;border-radius:var(--md-shape-full);font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer;transition:all .2s;}
+  .btn-primary:hover{background:var(--md-on-primary-container);}
+  .btn-secondary{padding:9px 14px;background:var(--md-surface-container-high);color:var(--ink);border:none;border-radius:var(--md-shape-full);font-family:var(--sans);font-size:12px;font-weight:500;cursor:pointer;transition:all .2s;}
+  .btn-secondary:hover{background:var(--md-surface-container-highest);}
+  .btn-danger{width:100%;padding:10px;background:#ba1a1a;color:#fff;border:none;border-radius:var(--md-shape-full);font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer;transition:opacity .15s;}
+  .btn-danger:hover{opacity:.9;}
+  .settings-row{display:flex;gap:8px;margin-top:10px;}
+  .settings-row .btn-secondary{flex:1;}
+  .sync-log{font-family:var(--mono);font-size:11px;color:var(--ink-soft);line-height:1.5;max-height:120px;overflow-y:auto;padding:8px 10px;background:var(--md-surface-container-lowest);border-radius:var(--md-shape-sm);border:1px solid var(--border);white-space:pre-wrap;}
 </style>
 </head>
 <body>
@@ -191,6 +231,15 @@
         <div class="legend-item"><div class="legend-line long"></div><span>&gt;80th</span></div>
       </div>
     </div>
+    <span class="sync-status" id="sync-status" onclick="openSettings()" title="Sync settings">
+      <span class="sync-dot"></span>
+      <span id="sync-label">local</span>
+    </span>
+    <button class="btn-icon" id="settings-btn" onclick="openSettings()" title="Settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+      </svg>
+    </button>
   </div>
 </header>
 
@@ -238,9 +287,72 @@
   </div>
 </main>
 
+<!-- ══ SETTINGS MODAL ══ -->
+<div class="modal-overlay" id="modal-settings" onclick="if(event.target===this)closeSettings()">
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <div class="modal-title">Settings</div>
+      <button class="modal-close" onclick="closeSettings()" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="settings-section">
+        <div class="settings-section-title">GitHub Sync</div>
+        <div class="settings-card">
+          <div class="settings-hint">
+            Sync your hikes to a private GitHub repository. Create a repo named <strong>personal-data</strong> and a Personal Access Token with <strong>repo</strong> scope at
+            <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">github.com/settings/tokens</a>.
+          </div>
+          <div class="field-group">
+            <div class="field-label">GitHub Username</div>
+            <input class="text-input" id="gh-username" type="text" placeholder="your-username" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+          </div>
+          <div class="field-group">
+            <div class="field-label">Repository Name</div>
+            <input class="text-input" id="gh-repo" type="text" placeholder="personal-data" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+          </div>
+          <div class="field-group">
+            <div class="field-label">Personal Access Token</div>
+            <input class="text-input" id="gh-token" type="password" placeholder="ghp_…" autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false" name="cairn-gh-token"/>
+          </div>
+          <button class="btn-primary" onclick="saveGitHubSettings()">Save &amp; Test Connection</button>
+          <div id="gh-status-row" style="display:none;margin-top:10px;">
+            <div class="settings-hint" id="gh-status-msg"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Sync Log</div>
+        <div class="settings-card">
+          <div class="sync-log" id="sync-log">No sync activity yet.</div>
+          <div class="settings-row">
+            <button class="btn-secondary" onclick="syncNow()">Sync Now</button>
+            <button class="btn-secondary" onclick="syncPullOnly()">Pull from GitHub</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Danger Zone</div>
+        <div class="settings-card">
+          <div class="settings-hint">Disconnect GitHub sync. Your local hikes are not affected.</div>
+          <button class="btn-danger" onclick="disconnectGitHub()">Disconnect GitHub</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <script>
 // ── constants ─────────────────────────────────────────────────────
-const STORAGE_KEY = 'cairn-hikes-v1';
+const APP_NAME = 'cairn';
+const OPS_KEY = 'cairn_ops';
+const DEVICE_ID_KEY = 'cairn_device_id';
+const SETTINGS_KEY = 'cairn_gh_settings';
+// One-time clean-up of the pre-op-log snapshot key. Safe to leave in: no-op once removed.
+try { localStorage.removeItem('cairn-hikes-v1'); } catch {}
 const COVERAGE_M = 30;
 const COLORS = ['#d4633a','#4a7c59','#5b7fa6','#8b5e8b','#b8852a','#3d7a7a','#c05050','#5c7a3e','#7a5c8b','#3a7a8b'];
 
@@ -276,24 +388,103 @@ function setUnits(u) {
   if (elevChart && elevChart._hikeIdx !== undefined) showElev(elevChart._hikeIdx);
 }
 
-// ── localStorage helpers ──────────────────────────────────────────
-function saveHikes() {
+// ── op log ────────────────────────────────────────────────────────
+// Append-only log of { opId, op, entityId, data, ts, deviceId }. Current
+// `hikes[]` is derived from the log via materialize(); all mutations go
+// through applyOp() so sync can stream them out.
+let ops = [];
+let deviceId = null;
+let opSeq = 0;
+
+function loadOps() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(hikes.map(h => ({
-      name: h.name, date: h.date, distKm: h.distKm, elevGain: h.elevGain,
-      coords: h.coords.map(c => [+(c.lat.toFixed(5)), +(c.lon.toFixed(5)), Math.round(c.ele)])
-    }))));
-  } catch(e) { console.warn('localStorage full?', e); }
+    const raw = localStorage.getItem(OPS_KEY);
+    ops = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(ops)) ops = [];
+  } catch { ops = []; }
 }
-function loadSavedHikes() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw).map(h => ({
-      name: h.name, date: h.date, distKm: h.distKm, elevGain: h.elevGain,
-      coords: h.coords.map(c => ({ lat: c[0], lon: c[1], ele: c[2] }))
-    }));
-  } catch(e) { return []; }
+function saveOps() {
+  try { localStorage.setItem(OPS_KEY, JSON.stringify(ops)); }
+  catch(e) { console.warn('localStorage full?', e); }
+}
+function ensureDeviceId() {
+  let id = null;
+  try { id = localStorage.getItem(DEVICE_ID_KEY); } catch {}
+  if (!id) {
+    id = Math.random().toString(36).slice(2, 10);
+    try { localStorage.setItem(DEVICE_ID_KEY, id); } catch {}
+  }
+  deviceId = id;
+}
+
+// Stable, content-addressed ID for a hike. Two uploads of the same GPX produce
+// the same hikeId → importer skips the re-upload without creating an op.
+async function computeHikeId(coordsObjArray) {
+  const normalized = coordsObjArray.map(c => [
+    +(c.lat.toFixed(5)), +(c.lon.toFixed(5)), Math.round(c.ele)
+  ]);
+  const bytes = new TextEncoder().encode(JSON.stringify(normalized));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function normalizeCoords(coordsObjArray) {
+  return coordsObjArray.map(c => [
+    +(c.lat.toFixed(5)), +(c.lon.toFixed(5)), Math.round(c.ele)
+  ]);
+}
+function denormalizeCoords(pairs) {
+  return pairs.map(c => ({ lat: c[0], lon: c[1], ele: c[2] }));
+}
+
+function makeOpId() {
+  return `${deviceId}_${Date.now()}_${opSeq++}`;
+}
+
+// Apply one op locally: append → persist → re-materialize → re-render → push.
+function applyOp(opType, entityId, data) {
+  const op = {
+    opId: makeOpId(),
+    op: opType,
+    entityId,
+    data: data || null,
+    ts: Date.now(),
+    deviceId,
+  };
+  ops.push(op);
+  saveOps();
+  materializeInto(hikes);
+  renderAll();
+  window.cairnSync?.schedulePush();
+}
+
+// Replay ops in ts order into the target hikes array (in place, so existing
+// references like the Leaflet `layer` assignment in renderAll stay consistent).
+function materializeInto(target) {
+  const byId = new Map();
+  const sorted = ops.slice().sort((a, b) =>
+    (a.ts - b.ts) || (a.opId < b.opId ? -1 : 1));
+  for (const op of sorted) {
+    if (op.op === 'add-hike' && op.data) {
+      byId.set(op.entityId, {
+        id: op.entityId,
+        name: op.data.name,
+        date: op.data.date,
+        distKm: op.data.distKm,
+        elevGain: op.data.elevGain,
+        coords: denormalizeCoords(op.data.coords),
+      });
+    } else if (op.op === 'delete-hike') {
+      byId.delete(op.entityId);
+    }
+  }
+  target.length = 0;
+  for (const h of byId.values()) target.push(h);
+}
+
+function hasHike(hikeId) {
+  return hikes.some(h => h.id === hikeId);
 }
 
 
@@ -539,37 +730,78 @@ function closeElev(){
 
 // ── clear all ─────────────────────────────────────────────────────
 function clearAll(){
+  if(!hikes.length) return;
   if(!confirm(`Remove all ${hikes.length} hikes?`)) return;
-  hikes.length=0;
-  map.eachLayer(l=>{if(l instanceof L.Polyline||l instanceof L.CircleMarker) map.removeLayer(l);});
-  if(ridgeVisible&&ridgeLayer) ridgeLayer.addTo(map);
-  closeElev(); localStorage.removeItem(STORAGE_KEY); ridgeCoverageKm=null;
+  const ids = hikes.map(h => h.id);
+  // Batch so the whole clear lands as a single push instead of N debounces.
+  if (window.cairnSync) {
+    window.cairnSync.batch(() => {
+      for (const id of ids) applyOp('delete-hike', id, null);
+    }).catch(() => {});
+  } else {
+    for (const id of ids) applyOp('delete-hike', id, null);
+  }
+  closeElev(); ridgeCoverageKm=null;
   document.getElementById('drop-zone').classList.remove('hidden');
-  document.getElementById('hike-list').innerHTML='<div class="empty-sidebar">Load GPX files to see your hikes here</div>';
   document.getElementById('hike-count').textContent='0';
   document.getElementById('add-more-btn').style.display='none';
   document.getElementById('clear-btn').style.display='none';
   document.getElementById('stats-bar').style.display='none';
   document.getElementById('ridge-coverage-panel').style.display='none';
+  // renderAll() inside applyOp also clears map layers.
 }
 
 // ── file loading ──────────────────────────────────────────────────
 async function loadFiles(files){
-  const existing=new Set(hikes.map(h=>h.name));
-  const results=await Promise.all(Array.from(files).map(f=>new Promise(res=>{
-    const r=new FileReader();r.onload=e=>res({text:e.target.result,name:f.name});r.readAsText(f);
+  const results = await Promise.all(Array.from(files).map(f => new Promise(res => {
+    const r = new FileReader();
+    r.onload = e => res({ text: e.target.result, name: f.name });
+    r.readAsText(f);
   })));
-  results.forEach(({text,name})=>{
-    const h=parseGPX(text,name);
-    if(h&&!existing.has(h.name)){hikes.push(h);existing.add(h.name);}
-  });
-  if(!hikes.length) return;
+
+  const toAdd = [];
+  const seenIds = new Set();   // within this import batch
+  let skipped = 0;
+  for (const { text, name } of results) {
+    const h = parseGPX(text, name);
+    if (!h) continue;
+    const id = await computeHikeId(h.coords);
+    if (hasHike(id) || seenIds.has(id)) { skipped++; continue; }
+    seenIds.add(id);
+    toAdd.push({ id, hike: h });
+  }
+
+  if (!toAdd.length) {
+    if (skipped) console.log(`cairn: skipped ${skipped} already-present hike(s)`);
+    return;
+  }
+
+  // Batch: all new hikes from this import commit as one push.
+  const apply = () => {
+    for (const { id, hike } of toAdd) {
+      applyOp('add-hike', id, {
+        name: hike.name,
+        date: hike.date,
+        distKm: hike.distKm,
+        elevGain: hike.elevGain,
+        coords: normalizeCoords(hike.coords),
+      });
+    }
+  };
+  if (window.cairnSync) {
+    try { await window.cairnSync.batch(apply); }
+    catch { apply(); }
+  } else {
+    apply();
+  }
+
   document.getElementById('drop-zone').classList.add('hidden');
-  renderAll();
-  const all=hikes.flatMap(h=>h.coords.map(c=>[c.lat,c.lon]));
-  if(all.length) map.fitBounds(all,{padding:[40,40]});
-  saveHikes();
-  if(ridgeVisible&&ridgeSegments){document.getElementById('ridge-coverage-panel').style.display='block';recomputeCoverage();}
+  const all = hikes.flatMap(h => h.coords.map(c => [c.lat, c.lon]));
+  if (all.length) map.fitBounds(all, { padding: [40, 40] });
+  if (ridgeVisible && ridgeSegments) {
+    document.getElementById('ridge-coverage-panel').style.display = 'block';
+    recomputeCoverage();
+  }
 }
 
 // ── events ────────────────────────────────────────────────────────
@@ -583,22 +815,167 @@ document.getElementById('map').addEventListener('drop',e=>{e.preventDefault();lo
 
 // ── boot ──────────────────────────────────────────────────────────
 setUnits('imperial');
-const saved=loadSavedHikes();
-if(saved.length){
-  hikes.push(...saved);
+ensureDeviceId();
+loadOps();
+materializeInto(hikes);
+if (hikes.length) {
   document.getElementById('drop-zone').classList.add('hidden');
   renderAll();
-  const all=hikes.flatMap(h=>h.coords.map(c=>[c.lat,c.lon]));
-  if(all.length) map.fitBounds(all,{padding:[40,40]});
+  const all = hikes.flatMap(h => h.coords.map(c => [c.lat, c.lon]));
+  if (all.length) map.fitBounds(all, { padding: [40, 40] });
 }
+
+// Re-render after the sync module pulls remote ops and merges them in.
+window.cairnOnOpsMerged = (mergedOps) => {
+  ops = mergedOps.slice();
+  saveOps();
+  materializeInto(hikes);
+  if (hikes.length) document.getElementById('drop-zone').classList.add('hidden');
+  renderAll();
+};
+
+// Device ops are the subset of `ops` authored by this device. The sync module
+// owns per-device files; it only pushes what this device wrote.
+window.cairnGetDeviceOps = () => ops.filter(op => op.deviceId === deviceId);
 </script>
-</body>
-</html>
-0]});
-}
+
+<!-- ══ SYNC MODULE GLUE ══════════════════════════════════════════════ -->
+<script type="module">
+  import { PersonalSync } from './shared/personal-sync.mjs';
+
+  const APP_NAME = 'cairn';
+  const SETTINGS_KEY = 'cairn_gh_settings';
+  const SYNC_LOG_MAX = 40;
+  const syncLog = [];
+
+  function getSettings() {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+  function setSettings(s) {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  }
+  function clearSettings() {
+    localStorage.removeItem(SETTINGS_KEY);
+  }
+
+  function appendLog(line) {
+    const ts = new Date().toTimeString().slice(0, 8);
+    syncLog.push(`[${ts}] ${line}`);
+    while (syncLog.length > SYNC_LOG_MAX) syncLog.shift();
+    const el = document.getElementById('sync-log');
+    if (el) {
+      el.textContent = syncLog.join('\n');
+      el.scrollTop = el.scrollHeight;
+    }
+  }
+
+  function setStatus(state, label) {
+    const pill = document.getElementById('sync-status');
+    const lbl = document.getElementById('sync-label');
+    if (!pill || !lbl) return;
+    pill.classList.remove('syncing', 'ok', 'error');
+    if (state && state !== 'local') pill.classList.add(state);
+    lbl.textContent = label;
+  }
+
+  // Initial status: if unconfigured we say "local"; otherwise we'll update
+  // once the first push/pull emits a status event.
+  setStatus(null, getSettings() ? 'idle' : 'local');
+
+  const sync = PersonalSync.create({
+    appName: APP_NAME,
+    deviceId: localStorage.getItem('cairn_device_id'),
+    getSettings,
+    getDeviceOps: () => window.cairnGetDeviceOps ? window.cairnGetDeviceOps() : [],
+    onOpsMerged: (allOps) => {
+      if (window.cairnOnOpsMerged) window.cairnOnOpsMerged(allOps);
+    },
+  });
+  sync.on('log', appendLog);
+  sync.on('status', setStatus);
+
+  // Policy: in pure-local mode (no settings yet) the sync module should be
+  // a no-op, not an error. Short-circuit push entry points before they emit
+  // "not configured" errors; pulls are opt-in from the UI so they're fine as-is.
+  const _schedulePush = sync.schedulePush.bind(sync);
+  const _pushNow = sync.pushNow.bind(sync);
+  sync.schedulePush = () => { if (getSettings()) _schedulePush(); };
+  sync.pushNow = (opts) => getSettings() ? _pushNow(opts) : Promise.resolve();
+
+  window.cairnSync = sync;
+
+  // ── settings modal + handlers ────────────────────────────────────
+  window.openSettings = () => {
+    const s = getSettings() || {};
+    document.getElementById('gh-username').value = s.username || '';
+    document.getElementById('gh-repo').value = s.repo || 'personal-data';
+    document.getElementById('gh-token').value = s.token || '';
+    document.getElementById('gh-status-row').style.display = 'none';
+    document.getElementById('modal-settings').classList.add('open');
+  };
+  window.closeSettings = () => {
+    document.getElementById('modal-settings').classList.remove('open');
+  };
+
+  function showGhStatus(msg, isError) {
+    const row = document.getElementById('gh-status-row');
+    const el = document.getElementById('gh-status-msg');
+    el.textContent = msg;
+    el.style.color = isError ? '#ba1a1a' : 'var(--ink-soft)';
+    row.style.display = 'block';
+  }
+
+  window.saveGitHubSettings = async () => {
+    const username = document.getElementById('gh-username').value.trim();
+    const repo = document.getElementById('gh-repo').value.trim();
+    const token = document.getElementById('gh-token').value.trim();
+    if (!username || !repo || !token) {
+      showGhStatus('All three fields are required.', true);
+      return;
+    }
+    // Probe the repo with a cheap authenticated call before we save.
+    showGhStatus('Testing connection…', false);
+    try {
+      const res = await fetch(`https://api.github.com/repos/${username}/${repo}`, {
+        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
+      });
+      if (!res.ok) {
+        showGhStatus(`GitHub responded ${res.status}. Check repo name, token scope.`, true);
+        return;
+      }
+    } catch (e) {
+      showGhStatus(`Network error: ${e.message}`, true);
+      return;
+    }
+    setSettings({ username, repo, token });
+    showGhStatus('✓ Connected. Pulling existing data…', false);
+    appendLog(`✓ Settings saved (${username}/${repo})`);
+    await sync.pull();
+    await sync.pushNow();
+  };
+
+  window.syncNow = async () => { await sync.syncNow(); };
+  window.syncPullOnly = async () => { await sync.pull(); };
+
+  window.disconnectGitHub = () => {
+    if (!confirm('Disconnect GitHub sync? Your local hikes are not affected.')) return;
+    clearSettings();
+    localStorage.removeItem('cairn_device_ops_sha');
+    setStatus(null, 'local');
+    appendLog('✓ GitHub disconnected');
+    document.getElementById('gh-username').value = '';
+    document.getElementById('gh-token').value = '';
+    document.getElementById('gh-status-row').style.display = 'none';
+  };
+
+  // Auto-pull on boot if settings are present, so a fresh tab sees remote ops.
+  if (getSettings()) {
+    sync.pull().catch(() => {});
+  }
 </script>
-</body>
-</html>
 
 </body>
 </html>
