@@ -136,6 +136,19 @@ class Sync {
     return url;
   }
 
+  // Git blob API fallback for files > 1MB (Contents API returns empty content
+  // with encoding:"none" for those). The sha is only ever derived from a
+  // listing response already scoped under apps/{appName}/, so the blob fetch
+  // can't escape the app subtree.
+  _blobUrl(settings, sha) {
+    if (typeof sha !== 'string' || !/^[a-f0-9]{40}$/.test(sha)) {
+      throw new Error(`invalid blob sha: ${JSON.stringify(sha)}`);
+    }
+    const url = `https://api.github.com/repos/${settings.username}/${settings.repo}/git/blobs/${sha}`;
+    this._assertSafeBlobUrl(url, settings);
+    return url;
+  }
+
   _assertSafeUrl(url, settings) {
     const expectedPrefix =
       `https://api.github.com/repos/${settings.username}/${settings.repo}/contents/apps/${this.appName}/`;
@@ -143,6 +156,14 @@ class Sync {
       `https://api.github.com/repos/${settings.username}/${settings.repo}/contents/apps/${this.appName}`;
     if (url !== dirExact && !url.startsWith(expectedPrefix)) {
       throw new Error(`URL outside app scope: ${url}`);
+    }
+  }
+
+  _assertSafeBlobUrl(url, settings) {
+    const expectedPrefix =
+      `https://api.github.com/repos/${settings.username}/${settings.repo}/git/blobs/`;
+    if (!url.startsWith(expectedPrefix)) {
+      throw new Error(`blob URL outside repo: ${url}`);
     }
   }
 
@@ -303,8 +324,26 @@ class Sync {
         });
         if (!fileRes.ok) return [];
         const fileData = await fileRes.json();
+        let b64 = fileData?.content;
+        // Contents API returns empty content (encoding:"none") for files > 1MB.
+        // Fall back to the git blob API, which handles up to 100MB.
+        if (!b64 && fileData?.sha) {
+          try {
+            const blobUrl = this._blobUrl(settings, fileData.sha);
+            const blobRes = await this.fetch(blobUrl, {
+              method: 'GET', headers: this._headers(settings.token),
+            });
+            if (blobRes.ok) {
+              const blobData = await blobRes.json();
+              if (blobData?.encoding === 'base64') b64 = blobData.content;
+            }
+          } catch {
+            return [];
+          }
+        }
+        if (!b64) return [];
         try {
-          const parsed = JSON.parse(decodeBase64Utf8(fileData.content));
+          const parsed = JSON.parse(decodeBase64Utf8(b64));
           return Array.isArray(parsed) ? parsed : [];
         } catch {
           return [];

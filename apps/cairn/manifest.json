@@ -2,11 +2,10 @@
   "name": "Cairn",
   "short_name": "Cairn",
   "description": "your hiking journal",
-  "start_url": "./mobile.html",
+  "start_url": "./",
   "display": "standalone",
-  "background_color": "#f5f0e8",
-  "theme_color": "#faf7f2",
-  "orientation": "portrait",
+  "background_color": "#fff8f5",
+  "theme_color": "#372f29",
   "icons": [
     {
       "src": "icon-192.png",

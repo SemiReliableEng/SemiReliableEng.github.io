@@ -67,30 +67,23 @@
   .subtitle{font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--md-inverse-primary);margin-top:1px;}
   .header-controls{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
 
-  .unit-toggle{display:flex;background:rgba(255,255,255,0.08);border-radius:var(--md-shape-full);padding:3px;overflow:hidden;}
-  .unit-btn{padding:4px 12px;font-family:var(--mono);font-size:10px;background:none;border:none;cursor:pointer;color:var(--md-inverse-on-surface);border-radius:var(--md-shape-full);transition:all .2s;}
+  /* Unit toggle — lives inside settings modal on light surface */
+  .unit-toggle{display:inline-flex;background:var(--md-surface-container);border-radius:var(--md-shape-full);padding:3px;}
+  .unit-btn{padding:6px 16px;font-family:var(--mono);font-size:11px;background:none;border:none;cursor:pointer;color:var(--ink-soft);border-radius:var(--md-shape-full);transition:all .2s;text-transform:uppercase;letter-spacing:.05em;}
   .unit-btn.active{background:var(--md-primary);color:var(--md-on-primary);}
 
-  .ridge-toggle{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;}
+  /* Ridge toggle — lives inside settings modal on light surface */
+  .ridge-toggle{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;}
   .ridge-toggle input{display:none;}
   .ridge-pill{width:36px;height:20px;background:var(--md-outline);border-radius:var(--md-shape-full);position:relative;transition:background .2s;flex-shrink:0;}
   .ridge-pill::after{content:'';position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .2s;}
   .ridge-toggle input:checked+.ridge-pill{background:var(--md-primary);}
   .ridge-toggle input:checked+.ridge-pill::after{transform:translateX(16px);}
-  .ridge-label{font-family:var(--mono);font-size:10px;color:var(--md-inverse-primary);text-transform:uppercase;letter-spacing:.08em;}
-  #ridge-status{font-family:var(--mono);font-size:10px;color:var(--md-inverse-primary);min-width:0;opacity:0.8;}
-
-  .stats-bar{display:flex;gap:16px;align-items:center;}
-  .stat{text-align:center;}
-  .stat-val{font-family:var(--mono);font-size:14px;font-weight:500;color:var(--md-inverse-on-surface);}
-  .stat-label{font-size:9px;color:var(--md-inverse-primary);text-transform:uppercase;letter-spacing:.08em;}
-  .stat-divider{width:1px;height:24px;background:rgba(255,255,255,0.15);}
-  .legend{display:flex;gap:10px;align-items:center;}
-  .legend-item{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--md-inverse-primary);}
-  .legend-line{width:18px;height:3px;border-radius:var(--md-shape-xs);}
-  .legend-line.short{background:var(--short-color);}
-  .legend-line.medium{background:var(--medium-color);height:2px;border-top:2px dashed var(--medium-color);background:none;}
-  .legend-line.long{background:var(--long-color);height:3px;border-top:3px dotted var(--long-color);background:none;}
+  .ridge-label{font-family:var(--sans);font-size:13px;color:var(--ink);}
+  #ridge-status{font-family:var(--mono);font-size:11px;color:var(--ink-soft);display:block;margin-top:6px;min-height:1em;}
+  .display-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .display-row + .display-row{margin-top:14px;padding-top:14px;border-top:1px solid var(--border);}
+  .display-row-label{font-family:var(--sans);font-size:13px;color:var(--ink);}
 
   main{flex:1;display:flex;overflow:hidden;position:relative;}
   #map-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;}
@@ -116,6 +109,17 @@
 
   #sidebar{width:260px;background:var(--md-surface-container-low);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;}
   .sidebar-header{padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+  .sidebar-stats{display:none;padding:10px 16px;border-bottom:1px solid var(--border);gap:14px;align-items:baseline;justify-content:space-between;font-family:var(--mono);flex-shrink:0;}
+  .sidebar-stats.visible{display:flex;}
+  .sidebar-stat{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
+  .sidebar-stat-val{font-size:14px;font-weight:500;color:var(--ink);}
+  .sidebar-stat-label{font-size:9px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.08em;}
+  .sidebar-close{display:none;background:none;border:none;color:var(--ink-soft);cursor:pointer;padding:6px;border-radius:var(--md-shape-full);width:32px;height:32px;align-items:center;justify-content:center;font-size:20px;line-height:1;}
+  .sidebar-close:hover{background:var(--md-surface-container-high);}
+
+  .hamburger-fab{display:none;position:absolute;top:12px;right:12px;z-index:500;width:40px;height:40px;border-radius:var(--md-shape-full);background:var(--md-surface-container-lowest);border:1px solid var(--border);color:var(--ink);cursor:pointer;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.15);transition:background .15s;}
+  .hamburger-fab:hover{background:var(--md-surface-container);}
+  .hamburger-fab svg{width:20px;height:20px;}
   .sidebar-title{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);font-weight:500;}
   .sidebar-actions{display:flex;align-items:center;gap:10px;}
   .hike-count{font-family:var(--mono);font-size:10px;background:var(--md-primary-container);color:var(--md-on-primary-container);padding:2px 8px;border-radius:var(--md-shape-full);font-weight:500;}
@@ -197,6 +201,27 @@
   .settings-row{display:flex;gap:8px;margin-top:10px;}
   .settings-row .btn-secondary{flex:1;}
   .sync-log{font-family:var(--mono);font-size:11px;color:var(--ink-soft);line-height:1.5;max-height:120px;overflow-y:auto;padding:8px 10px;background:var(--md-surface-container-lowest);border-radius:var(--md-shape-sm);border:1px solid var(--border);white-space:pre-wrap;}
+
+  /* Narrow width: sidebar becomes a full-screen overlay, hamburger reveals it. */
+  @media (max-width: 899px) {
+    header{padding:10px 14px;}
+    h1{font-size:20px;}
+    .subtitle{display:none;}
+    .hamburger-fab{display:flex;}
+    .sidebar-close{display:flex;}
+    #sidebar{
+      position:fixed;
+      inset:0;
+      width:100%;
+      z-index:1500;
+      border-left:none;
+      transform:translateX(100%);
+      transition:transform .28s cubic-bezier(.4,0,.2,1);
+    }
+    #sidebar.open{transform:translateX(0);}
+    /* Elevation panel takes less vertical room on small screens */
+    #elev-panel.open{height:140px;}
+  }
 </style>
 </head>
 <body>
@@ -207,30 +232,6 @@
     <span class="subtitle">your hiking journal</span>
   </div>
   <div class="header-controls">
-    <div class="unit-toggle">
-      <button class="unit-btn" id="btn-imperial" onclick="setUnits('imperial')">mi / ft</button>
-      <button class="unit-btn" id="btn-metric" onclick="setUnits('metric')">km / m</button>
-    </div>
-    <label class="ridge-toggle">
-      <input type="checkbox" id="ridge-checkbox" onchange="toggleRidgeTrail(this.checked)"/>
-      <span class="ridge-pill"></span>
-      <span class="ridge-label">Bay Area Ridge Trail</span>
-    </label>
-    <span id="ridge-status"></span>
-    <div class="stats-bar" id="stats-bar" style="display:none">
-      <div class="stat-divider"></div>
-      <div class="stat"><div class="stat-val" id="stat-hikes">0</div><div class="stat-label">Hikes</div></div>
-      <div class="stat-divider"></div>
-      <div class="stat"><div class="stat-val" id="stat-dist">0</div><div class="stat-label" id="lbl-dist">Total mi</div></div>
-      <div class="stat-divider"></div>
-      <div class="stat"><div class="stat-val" id="stat-elev">0</div><div class="stat-label" id="lbl-elev">Elev gain ft</div></div>
-      <div class="stat-divider"></div>
-      <div class="legend">
-        <div class="legend-item"><div class="legend-line short"></div><span>≤50th</span></div>
-        <div class="legend-item"><div class="legend-line medium"></div><span>50–80th</span></div>
-        <div class="legend-item"><div class="legend-line long"></div><span>&gt;80th</span></div>
-      </div>
-    </div>
     <span class="sync-status" id="sync-status" onclick="openSettings()" title="Sync settings">
       <span class="sync-dot"></span>
       <span id="sync-label">local</span>
@@ -246,6 +247,11 @@
 <main>
   <div id="map-panel">
     <div id="map">
+      <button class="hamburger-fab" id="hamburger-fab" onclick="openHikeList()" aria-label="Open hike list" title="Hikes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
+        </svg>
+      </button>
       <div id="drop-zone">
         <div class="drop-icon">🗺️</div>
         <div class="drop-title">Cairn</div>
@@ -271,7 +277,12 @@
       <div class="sidebar-actions">
         <span class="hike-count" id="hike-count">0</span>
         <button class="clear-btn" id="clear-btn" style="display:none" onclick="clearAll()">clear all</button>
+        <button class="sidebar-close" onclick="closeHikeList()" aria-label="Close">×</button>
       </div>
+    </div>
+    <div class="sidebar-stats" id="sidebar-stats">
+      <div class="sidebar-stat"><span class="sidebar-stat-val" id="stat-dist">0.0</span><span class="sidebar-stat-label" id="lbl-dist">Total mi</span></div>
+      <div class="sidebar-stat"><span class="sidebar-stat-val" id="stat-elev">0</span><span class="sidebar-stat-label" id="lbl-elev">Elev gain ft</span></div>
     </div>
     <div id="hike-list"><div class="empty-sidebar">Load GPX files to see your hikes here</div></div>
     <div id="ridge-coverage-panel">
@@ -295,6 +306,27 @@
       <button class="modal-close" onclick="closeSettings()" aria-label="Close">×</button>
     </div>
     <div class="modal-body">
+
+      <div class="settings-section">
+        <div class="settings-section-title">Display</div>
+        <div class="settings-card">
+          <div class="display-row">
+            <span class="display-row-label">Units</span>
+            <div class="unit-toggle">
+              <button class="unit-btn active" id="btn-imperial" onclick="setUnits('imperial')">mi / ft</button>
+              <button class="unit-btn" id="btn-metric" onclick="setUnits('metric')">km / m</button>
+            </div>
+          </div>
+          <div class="display-row">
+            <span class="display-row-label">Bay Area Ridge Trail</span>
+            <label class="ridge-toggle" for="ridge-checkbox">
+              <input type="checkbox" id="ridge-checkbox" onchange="toggleRidgeTrail(this.checked)"/>
+              <span class="ridge-pill"></span>
+            </label>
+          </div>
+          <span id="ridge-status"></span>
+        </div>
+      </div>
 
       <div class="settings-section">
         <div class="settings-section-title">GitHub Sync</div>
@@ -351,6 +383,7 @@ const APP_NAME = 'cairn';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
+const UNITS_KEY = 'cairn_units';
 // One-time clean-up of the pre-op-log snapshot key. Safe to leave in: no-op once removed.
 try { localStorage.removeItem('cairn-hikes-v1'); } catch {}
 const COVERAGE_M = 30;
@@ -382,6 +415,7 @@ function rawElev(m)   { return units==='imperial' ? toFt(m)  : m; }
 
 function setUnits(u) {
   units = u;
+  try { localStorage.setItem(UNITS_KEY, u); } catch {}
   document.getElementById('btn-imperial').classList.toggle('active', u==='imperial');
   document.getElementById('btn-metric').classList.toggle('active',   u==='metric');
   updateStats(); updateSidebar(); updateCoverageUI();
@@ -406,6 +440,32 @@ function loadOps() {
 function saveOps() {
   try { localStorage.setItem(OPS_KEY, JSON.stringify(ops)); }
   catch(e) { console.warn('localStorage full?', e); }
+}
+
+// Compact the local op log in place: drop ops this device authored whose
+// effect is already covered by another device's op for the same entityId.
+// Safe for add-hike (payload is deterministic from content-addressed
+// entityId) and delete-hike (idempotent). Update-hike is left alone since
+// its payload carries device-specific edits. Returns number of ops dropped.
+function compactLocalOps() {
+  if (!deviceId) return 0;
+  const remoteAdd = new Set();
+  const remoteDel = new Set();
+  for (const op of ops) {
+    if (op.deviceId === deviceId) continue;
+    if (op.op === 'add-hike')    remoteAdd.add(op.entityId);
+    if (op.op === 'delete-hike') remoteDel.add(op.entityId);
+  }
+  const before = ops.length;
+  ops = ops.filter(op => {
+    if (op.deviceId !== deviceId) return true;
+    if (op.op === 'add-hike'    && remoteAdd.has(op.entityId)) return false;
+    if (op.op === 'delete-hike' && remoteDel.has(op.entityId)) return false;
+    return true;
+  });
+  const dropped = before - ops.length;
+  if (dropped > 0) saveOps();
+  return dropped;
 }
 function ensureDeviceId() {
   let id = null;
@@ -680,19 +740,34 @@ function updateSidebar(){
   document.getElementById('clear-btn').style.display='inline';
 }
 function updateStats(){
-  const dk=hikes.reduce((s,h)=>s+h.distKm,0), em=hikes.reduce((s,h)=>s+h.elevGain,0);
-  document.getElementById('stat-hikes').textContent=hikes.length;
-  document.getElementById('stat-dist').textContent=rawDist(dk).toFixed(1);
-  document.getElementById('lbl-dist').textContent='Total '+distUnit();
-  document.getElementById('stat-elev').textContent=Math.round(rawElev(em)).toLocaleString();
-  document.getElementById('lbl-elev').textContent='Elev gain '+elevUnit();
-  document.getElementById('stats-bar').style.display='flex';
+  const stats = document.getElementById('sidebar-stats');
+  if (!hikes.length) { stats.classList.remove('visible'); return; }
+  const dk = hikes.reduce((s,h)=>s+h.distKm,0);
+  const em = hikes.reduce((s,h)=>s+h.elevGain,0);
+  document.getElementById('stat-dist').textContent = rawDist(dk).toFixed(1);
+  document.getElementById('lbl-dist').textContent = 'Total ' + distUnit();
+  document.getElementById('stat-elev').textContent = Math.round(rawElev(em)).toLocaleString();
+  document.getElementById('lbl-elev').textContent = 'Elev gain ' + elevUnit();
+  stats.classList.add('visible');
 }
 function focusHike(i){
   highlightSidebar(i);
   const h=hikes[i];
   if(h?.layer){map.fitBounds(h.layer.getBounds(),{padding:[40,40]});h.layer.openPopup();}
+  // On narrow widths, the sidebar is an overlay — close it so the map is visible.
+  if (isNarrow()) closeHikeList();
 }
+
+// ── narrow-width hike list overlay ────────────────────────────────
+const narrowMql = window.matchMedia('(max-width: 899px)');
+function isNarrow() { return narrowMql.matches; }
+function openHikeList()  { document.getElementById('sidebar').classList.add('open'); }
+function closeHikeList() { document.getElementById('sidebar').classList.remove('open'); }
+// Clean up the overlay class when crossing the breakpoint so wide layout
+// isn't stuck with a transform-hidden sidebar.
+narrowMql.addEventListener('change', e => {
+  if (!e.matches) document.getElementById('sidebar').classList.remove('open');
+});
 
 // ── elevation profile ─────────────────────────────────────────────
 function showElev(i){
@@ -746,7 +821,6 @@ function clearAll(){
   document.getElementById('hike-count').textContent='0';
   document.getElementById('add-more-btn').style.display='none';
   document.getElementById('clear-btn').style.display='none';
-  document.getElementById('stats-bar').style.display='none';
   document.getElementById('ridge-coverage-panel').style.display='none';
   // renderAll() inside applyOp also clears map layers.
 }
@@ -814,7 +888,7 @@ document.getElementById('map').addEventListener('dragover',e=>e.preventDefault()
 document.getElementById('map').addEventListener('drop',e=>{e.preventDefault();loadFiles(e.dataTransfer.files);});
 
 // ── boot ──────────────────────────────────────────────────────────
-setUnits('imperial');
+setUnits(localStorage.getItem(UNITS_KEY) === 'metric' ? 'metric' : 'imperial');
 ensureDeviceId();
 loadOps();
 materializeInto(hikes);
@@ -827,16 +901,32 @@ if (hikes.length) {
 
 // Re-render after the sync module pulls remote ops and merges them in.
 window.cairnOnOpsMerged = (mergedOps) => {
+  const hadHikes = hikes.length > 0;
   ops = mergedOps.slice();
   saveOps();
+  // Drop our ops that another device has already covered. This is what shrinks
+  // the per-device files over time — next push uploads the compacted subset.
+  const dropped = compactLocalOps();
   materializeInto(hikes);
   if (hikes.length) document.getElementById('drop-zone').classList.add('hidden');
   renderAll();
+  // First-open-on-a-new-device case: we arrived with no hikes, the pull
+  // brought some in — zoom the map to show them, otherwise the user sees
+  // the default SF Bay view and has to pan to find what synced.
+  if (!hadHikes && hikes.length) {
+    const all = hikes.flatMap(h => h.coords.map(c => [c.lat, c.lon]));
+    if (all.length) map.fitBounds(all, { padding: [40, 40] });
+  }
+  // If compaction shrank our log, our remote file is now stale. Schedule a
+  // push so the file on GitHub reflects the smaller set.
+  if (dropped > 0) window.cairnSync?.schedulePush();
 };
 
 // Device ops are the subset of `ops` authored by this device. The sync module
 // owns per-device files; it only pushes what this device wrote.
 window.cairnGetDeviceOps = () => ops.filter(op => op.deviceId === deviceId);
+
+window.cairnCompactLocalOps = compactLocalOps;
 </script>
 
 <!-- ══ SYNC MODULE GLUE ══════════════════════════════════════════════ -->
@@ -902,8 +992,78 @@ window.cairnGetDeviceOps = () => ops.filter(op => op.deviceId === deviceId);
   // "not configured" errors; pulls are opt-in from the UI so they're fine as-is.
   const _schedulePush = sync.schedulePush.bind(sync);
   const _pushNow = sync.pushNow.bind(sync);
-  sync.schedulePush = () => { if (getSettings()) _schedulePush(); };
-  sync.pushNow = (opts) => getSettings() ? _pushNow(opts) : Promise.resolve();
+  const _pull = sync.pull.bind(sync);
+
+  // Pull-before-push + compaction: before uploading this device's ops file,
+  // fetch remote so compactLocalOps() can drop ops another device already
+  // covers. If compaction empties our local set AND we have a file on GitHub,
+  // delete it so the per-device file doesn't linger as stale 10MB.
+  let pushInFlight = false;
+  let lastPullCompletedAt = 0;
+
+  // Track pull recency so pushNow can skip an immediately-redundant pull
+  // (e.g. the boot pull → compact → schedulePush → pushNow chain).
+  sync.pull = async () => {
+    const r = await _pull();
+    lastPullCompletedAt = Date.now();
+    return r;
+  };
+
+  async function deleteDeviceFile(settings) {
+    const sha = localStorage.getItem('cairn_device_ops_sha');
+    if (!sha) return; // nothing on GitHub to delete
+    const devId = localStorage.getItem('cairn_device_id');
+    const url = `https://api.github.com/repos/${settings.username}/${settings.repo}/contents/apps/${APP_NAME}/ops/${devId}.json`;
+    try {
+      const res = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `token ${settings.token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/vnd.github.v3+json',
+        },
+        body: JSON.stringify({
+          message: `apps/${APP_NAME}/ops/${devId}: compacted to empty`,
+          sha,
+        }),
+      });
+      if (res.ok) {
+        localStorage.removeItem('cairn_device_ops_sha');
+        appendLog('✓ Compacted to empty; removed remote file');
+      } else {
+        appendLog(`✗ Delete failed: ${res.status}`);
+      }
+    } catch (e) {
+      appendLog(`✗ Delete error: ${e.message}`);
+    }
+  }
+
+  sync.schedulePush = () => {
+    if (pushInFlight) return;
+    if (getSettings()) _schedulePush();
+  };
+  sync.pushNow = async (opts) => {
+    const settings = getSettings();
+    if (!settings) return;
+    if (pushInFlight) return;
+    pushInFlight = true;
+    try {
+      // Skip pre-push pull if we just completed one — common when a pull's
+      // onOpsMerged triggered the schedulePush that brought us here.
+      if (Date.now() - lastPullCompletedAt > 5000) {
+        try { await sync.pull(); } catch { /* compact against local only */ }
+      }
+      window.cairnCompactLocalOps?.();
+      const localOps = window.cairnGetDeviceOps?.() || [];
+      if (localOps.length === 0) {
+        await deleteDeviceFile(settings);
+        return;
+      }
+      return await _pushNow(opts);
+    } finally {
+      pushInFlight = false;
+    }
+  };
 
   window.cairnSync = sync;
 
@@ -975,6 +1135,18 @@ window.cairnGetDeviceOps = () => ops.filter(op => op.deviceId === deviceId);
   if (getSettings()) {
     sync.pull().catch(() => {});
   }
+
+  // Pull again whenever the tab becomes visible — covers the common case of
+  // switching from one device to another without hitting "Sync Now" first.
+  // Guard against rapid fires (e.g. alt-tab spam) with a 10s floor.
+  let lastAutoPull = Date.now();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    if (!getSettings()) return;
+    if (Date.now() - lastAutoPull < 10_000) return;
+    lastAutoPull = Date.now();
+    sync.pull().catch(() => {});
+  });
 </script>
 
 </body>
