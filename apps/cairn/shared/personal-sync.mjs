@@ -299,8 +299,12 @@ class Sync {
       const dirRes = await this.fetch(dirUrl, { method: 'GET', headers: this._headers(settings.token) });
       if (!dirRes.ok) {
         if (dirRes.status === 404) {
-          this._status('error', '✗ not initialized');
-          this._log('✗ ops/ directory not found');
+          // First boot against a fresh app subtree: no ops/ dir yet. Not an
+          // error — the next push will create it. Clear any stale device-ops
+          // SHA so the push PUTs without a sha (create, not update).
+          this.storage.removeItem(this._shaKey);
+          this._status('ok', '✓ empty');
+          this._log('↳ No remote ops yet — will seed on first push');
           return { initialized: false };
         }
         throw new Error(`pull list failed: ${dirRes.status}`);
