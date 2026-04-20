@@ -60,9 +60,12 @@
     --border: var(--md-outline-variant);
     --shadow: rgba(33,26,20,0.12);
     --ridge: var(--md-secondary);
-    --short-color: #4a7c59;
-    --medium-color: #d4a843;
-    --long-color: #ba1a1a;
+    /* Distance-band colors for the sidebar hike list. Thresholds are in
+       miles regardless of the unit toggle: <5 / 5–10 / 10–15 / >15. */
+    --dist-band-1: #5eaa4a;
+    --dist-band-2: #2d6b32;
+    --dist-band-3: #b8852a;
+    --dist-band-4: #ba1a1a;
   }
 
   *{box-sizing:border-box;margin:0;padding:0; -webkit-tap-highlight-color: transparent;}
@@ -137,11 +140,11 @@
   .hike-item.active{border-left-color:var(--md-primary);background:var(--md-surface-container-highest);}
   .hike-name{font-family:var(--serif);font-size:15px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .hike-meta{display:flex;gap:8px;align-items:center;}
-  .hike-badge{font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:var(--md-shape-xs);color:#fff;font-weight:500;}
-  .hike-badge.short-badge{background:var(--short-color);}
-  .hike-badge.medium-badge{background:var(--medium-color);}
-  .hike-badge.long-badge{background:var(--long-color);}
-  .hike-dist{font-family:var(--mono);font-size:11px;color:var(--ink-soft);}
+  .hike-dist{font-family:var(--mono);font-size:12px;color:var(--ink-soft);font-weight:600;}
+  .hike-dist.dist-1{color:var(--dist-band-1);}
+  .hike-dist.dist-2{color:var(--dist-band-2);}
+  .hike-dist.dist-3{color:var(--dist-band-3);}
+  .hike-dist.dist-4{color:var(--dist-band-4);}
   .hike-date{font-size:11px;color:var(--ink-soft);opacity:0.8;}
   .add-more-btn{margin:12px 16px;padding:10px;background:transparent;border:1px dashed var(--md-outline);border-radius:var(--md-shape-md);font-size:12px;color:var(--ink-soft);cursor:pointer;text-align:center;font-family:var(--sans);transition:all .2s;flex-shrink:0;}
   .add-more-btn:hover{border-color:var(--md-primary);color:var(--md-primary);background:var(--md-primary-container);}
@@ -401,11 +404,12 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v4';
+const APP_VERSION = 'cairn-v7';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
 const UNITS_KEY = 'cairn_units';
+const RIDGE_KEY = 'cairn_ridge_visible';
 const SNAPSHOT_KEY = 'cairn_snapshot';
 // SNAPSHOT_SHA_KEY, COMPACT_SLOT_KEY, LAST_COMPACTION_KEY all live in the
 // sync-glue module block below, where they're the only code that touches them.
@@ -661,6 +665,7 @@ function parseGPX(text, filename) {
 // ── Ridge Trail overlay ───────────────────────────────────────────
 function toggleRidgeTrail(on) {
   ridgeVisible = on;
+  try { localStorage.setItem(RIDGE_KEY, on ? '1' : '0'); } catch {}
   if (!on) {
     if (ridgeLayer) map.removeLayer(ridgeLayer);
     document.getElementById('ridge-status').textContent = '';
@@ -697,11 +702,13 @@ function buildRidgeFromSegments(segments) {
   // long-distance routes (NPS, Ordnance Survey), and reads pre-attentively
   // as "official route" rather than "one more hike".
   const toLatLngs = seg => seg.map(c => [c.lat, c.lon]);
+  // Thinner than the thinnest hike-line band (short = 2.5 px) so the Ridge
+  // Trail reads as reference geography rather than competing with hikes.
   const baseLines = ridgeSegments.map(seg =>
-    L.polyline(toLatLngs(seg), { color:'#ffffff', weight:4.5, opacity:1, pane:'ridgePane' })
+    L.polyline(toLatLngs(seg), { color:'#ffffff', weight:2, opacity:1, pane:'ridgePane' })
   );
   const topLines = ridgeSegments.map(seg =>
-    L.polyline(toLatLngs(seg), { color:'#1a1a1a', weight:3, opacity:1, dashArray:'8 8', pane:'ridgePane' })
+    L.polyline(toLatLngs(seg), { color:'#1a1a1a', weight:1, opacity:1, dashArray:'5 5', pane:'ridgePane' })
   );
   ridgeLayer = L.layerGroup([...baseLines, ...topLines]);
   ridgeLayer.addTo(map);
@@ -751,29 +758,27 @@ function updateCoverageUI() {
   document.getElementById('coverage-note').textContent = 'of '+dispDist(ridgeTotalKm)+' total · within '+COVERAGE_M+'m';
 }
 
-// ── percentiles / styles ──────────────────────────────────────────
-function percentiles() {
-  const s=[...hikes.map(h=>h.distKm)].sort((a,b)=>a-b);
-  return {p50:s[Math.floor(s.length*.5)],p80:s[Math.floor(s.length*.8)]};
-}
-function getBand(d,p50,p80){return d<=p50?'short':d<=p80?'medium':'long';}
-function lineStyle(b,color){
-  if(b==='short') return{color,weight:2.5,opacity:.85,dashArray:null};
-  if(b==='medium') return{color,weight:3,opacity:.85,dashArray:'8 5'};
-  return{color,weight:4,opacity:.9,dashArray:'2 7'};
+// ── distance bands ────────────────────────────────────────────────
+// Fixed-threshold distance classification (miles, regardless of the
+// active unit toggle). Used only to color the mileage in the sidebar
+// hike list — map lines render uniformly.
+const KM_PER_MI = 1.609344;
+function distBandClass(distKm) {
+  const mi = distKm / KM_PER_MI;
+  if (mi < 5)  return 'dist-1';
+  if (mi < 10) return 'dist-2';
+  if (mi < 15) return 'dist-3';
+  return 'dist-4';
 }
 
 // ── render hikes ──────────────────────────────────────────────────
 function renderAll() {
   map.eachLayer(l=>{if(l instanceof L.Polyline||l instanceof L.CircleMarker||l instanceof L.LayerGroup) map.removeLayer(l);});
   if(ridgeVisible&&ridgeLayer) ridgeLayer.addTo(map);
-  const {p50,p80}=percentiles();
   hikes.forEach((h,i)=>{
     h.color=COLORS[i%COLORS.length];
-    h.band=getBand(h.distKm,p50,p80);
-    const s=lineStyle(h.band,h.color);
     const ll=h.coords.map(c=>[c.lat,c.lon]);
-    const line=L.polyline(ll,{color:s.color,weight:s.weight,opacity:s.opacity,dashArray:s.dashArray}).addTo(map);
+    const line=L.polyline(ll,{color:h.color,weight:3,opacity:0.85}).addTo(map);
     h.layer=line;
     // Bind popup + click to the visible line so focusHike()'s openPopup() still works.
     const bindHit = (layer) => { layer.bindPopup(popupHTML(h,i)); layer.on('click',()=>highlightSidebar(i)); };
@@ -794,13 +799,11 @@ function renderAll() {
 }
 
 function popupHTML(h,i){
-  const bl=h.band==='short'?'≤50th %ile':h.band==='medium'?'50–80th %ile':'>80th %ile';
   return `<div class="popup-name">${h.name}</div>
   <div class="popup-stats">
     <div class="popup-row"><span class="popup-key">Date</span><span class="popup-val">${h.date||'—'}</span></div>
     <div class="popup-row"><span class="popup-key">Distance</span><span class="popup-val">${dispDist(h.distKm)}</span></div>
     <div class="popup-row"><span class="popup-key">Elev gain</span><span class="popup-val">${dispElev(h.elevGain)}</span></div>
-    <div class="popup-row"><span class="popup-key">Length tier</span><span class="popup-val">${bl}</span></div>
   </div>
   <button class="popup-elev-btn" onclick="showElev(${i})">↗ Elevation profile</button>`;
 }
@@ -815,7 +818,7 @@ function updateSidebar(){
   list.innerHTML=hikes.map((h,i)=>`
     <div class="hike-item" data-i="${i}" onclick="focusHike(${i})">
       <div class="hike-name" title="${h.name}">${h.name}</div>
-      <div class="hike-meta"><span class="hike-badge ${h.band}-badge">${h.band}</span><span class="hike-dist">${dispDist(h.distKm)}</span></div>
+      <div class="hike-meta"><span class="hike-dist ${distBandClass(h.distKm)}">${dispDist(h.distKm)}</span></div>
       <div class="hike-date">${h.date||'No date'}</div>
     </div>`).join('');
   document.getElementById('hike-count').textContent=hikes.length;
@@ -975,6 +978,9 @@ document.getElementById('map').addEventListener('drop',e=>{e.preventDefault();lo
 
 // ── boot ──────────────────────────────────────────────────────────
 setUnits(localStorage.getItem(UNITS_KEY) === 'metric' ? 'metric' : 'imperial');
+const ridgeInitial = localStorage.getItem(RIDGE_KEY) === '1';
+document.getElementById('ridge-checkbox').checked = ridgeInitial;
+if (ridgeInitial) toggleRidgeTrail(true);
 ensureDeviceId();
 loadSnapshot();
 loadOps();
