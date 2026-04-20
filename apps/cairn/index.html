@@ -2,8 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="theme-color" content="#372f29"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <title>Cairn</title>
+<link rel="manifest" href="manifest.json"/>
+<link rel="icon" href="icon-192.png" type="image/png"/>
+<link rel="apple-touch-icon" href="icon-192.png"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -59,7 +66,7 @@
   }
 
   *{box-sizing:border-box;margin:0;padding:0; -webkit-tap-highlight-color: transparent;}
-  body{font-family:var(--sans);background:var(--bg);color:var(--ink);height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+  body{font-family:var(--sans);background:var(--bg);color:var(--ink);height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
 
   header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--md-inverse-surface);color:var(--md-inverse-on-surface);flex-shrink:0;gap:16px;flex-wrap:wrap;}
   .header-left{display:flex;align-items:baseline;gap:12px;}
@@ -117,14 +124,11 @@
   .sidebar-close{display:none;background:none;border:none;color:var(--ink-soft);cursor:pointer;padding:6px;border-radius:var(--md-shape-full);width:32px;height:32px;align-items:center;justify-content:center;font-size:20px;line-height:1;}
   .sidebar-close:hover{background:var(--md-surface-container-high);}
 
-  .hamburger-fab{display:none;position:absolute;top:12px;right:12px;z-index:500;width:40px;height:40px;border-radius:var(--md-shape-full);background:var(--md-surface-container-lowest);border:1px solid var(--border);color:var(--ink);cursor:pointer;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.15);transition:background .15s;}
-  .hamburger-fab:hover{background:var(--md-surface-container);}
-  .hamburger-fab svg{width:20px;height:20px;}
+  /* Hamburger only shows on mobile (see @media rule below). */
+  #hamburger-btn{display:none;}
   .sidebar-title{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);font-weight:500;}
   .sidebar-actions{display:flex;align-items:center;gap:10px;}
   .hike-count{font-family:var(--mono);font-size:10px;background:var(--md-primary-container);color:var(--md-on-primary-container);padding:2px 8px;border-radius:var(--md-shape-full);font-weight:500;}
-  .clear-btn{font-size:11px;color:var(--ink-soft);background:none;border:none;cursor:pointer;font-family:var(--sans);padding:4px 8px;border-radius:var(--md-shape-sm);transition:all .2s;}
-  .clear-btn:hover{background:var(--md-error-container);color:var(--md-on-error-container);}
   #hike-list{overflow-y:auto;flex:1;padding:8px 0;}
   #hike-list::-webkit-scrollbar{width:4px;}
   #hike-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:var(--md-shape-full);}
@@ -176,7 +180,7 @@
   /* Settings modal */
   .modal-overlay{position:fixed;inset:0;background:rgba(33,26,20,0.55);z-index:2000;display:none;align-items:flex-start;justify-content:center;padding:60px 16px 16px;overflow-y:auto;}
   .modal-overlay.open{display:flex;}
-  .modal-sheet{background:var(--md-surface);border-radius:var(--md-shape-lg);width:100%;max-width:520px;box-shadow:0 12px 36px rgba(0,0,0,.28);overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 80px);}
+  .modal-sheet{background:var(--md-surface);border-radius:var(--md-shape-lg);width:100%;max-width:520px;box-shadow:0 12px 36px rgba(0,0,0,.28);overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 80px);max-height:calc(100dvh - 80px);}
   .modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0;}
   .modal-title{font-family:var(--sans);font-size:17px;font-weight:500;color:var(--ink);}
   .modal-close{background:none;border:none;color:var(--ink-soft);cursor:pointer;padding:6px;border-radius:var(--md-shape-full);width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:20px;line-height:1;}
@@ -207,7 +211,7 @@
     header{padding:10px 14px;}
     h1{font-size:20px;}
     .subtitle{display:none;}
-    .hamburger-fab{display:flex;}
+    #hamburger-btn{display:flex;}
     .sidebar-close{display:flex;}
     #sidebar{
       position:fixed;
@@ -221,6 +225,9 @@
     #sidebar.open{transform:translateX(0);}
     /* Elevation panel takes less vertical room on small screens */
     #elev-panel.open{height:140px;}
+    /* Settings modal goes full-screen on mobile — matches the hike-list overlay. */
+    .modal-overlay{padding:0;align-items:stretch;}
+    .modal-sheet{max-width:100%;max-height:100dvh;height:100dvh;border-radius:0;box-shadow:none;}
   }
 </style>
 </head>
@@ -236,6 +243,11 @@
       <span class="sync-dot"></span>
       <span id="sync-label">local</span>
     </span>
+    <button class="btn-icon" id="hamburger-btn" onclick="openHikeList()" title="Hikes" aria-label="Open hike list">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
+      </svg>
+    </button>
     <button class="btn-icon" id="settings-btn" onclick="openSettings()" title="Settings" aria-label="Settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
@@ -247,11 +259,6 @@
 <main>
   <div id="map-panel">
     <div id="map">
-      <button class="hamburger-fab" id="hamburger-fab" onclick="openHikeList()" aria-label="Open hike list" title="Hikes">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
-        </svg>
-      </button>
       <div id="drop-zone">
         <div class="drop-icon">🗺️</div>
         <div class="drop-title">Cairn</div>
@@ -276,7 +283,6 @@
       <span class="sidebar-title">Hikes</span>
       <div class="sidebar-actions">
         <span class="hike-count" id="hike-count">0</span>
-        <button class="clear-btn" id="clear-btn" style="display:none" onclick="clearAll()">clear all</button>
         <button class="sidebar-close" onclick="closeHikeList()" aria-label="Close">×</button>
       </div>
     </div>
@@ -368,8 +374,10 @@
       <div class="settings-section">
         <div class="settings-section-title">Danger Zone</div>
         <div class="settings-card">
-          <div class="settings-hint">Disconnect GitHub sync. Your local hikes are not affected.</div>
-          <button class="btn-danger" onclick="disconnectGitHub()">Disconnect GitHub</button>
+          <div class="settings-hint">Remove every hike on this device. If GitHub sync is connected, the deletions propagate to your other devices on the next push.</div>
+          <button class="btn-danger" onclick="clearAll()">Clear all hikes</button>
+          <div class="settings-hint" style="margin-top:16px">Disconnect GitHub sync. Your local hikes are not affected.</div>
+          <button class="btn-danger" onclick="disconnectGitHub()" style="margin-top:8px">Disconnect GitHub</button>
           <div class="settings-hint" style="margin-top:16px">Force update: unregister the service worker and drop all cached assets, then reload. Use this if the version line below shows a stale SW or a deploy isn't picking up on this device. Your hikes and GitHub settings are kept.</div>
           <button class="btn-danger" onclick="forceUpdate()" style="margin-top:8px">Force Update</button>
         </div>
@@ -393,7 +401,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v3';
+const APP_VERSION = 'cairn-v4';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -682,17 +690,24 @@ function buildRidgeFromSegments(segments) {
   ridgeSegments.forEach(seg => {
     for(let i=1;i<seg.length;i++) ridgeTotalKm += haversine(seg[i-1], seg[i]);
   });
-  const polylines = ridgeSegments.map(seg =>
-    L.polyline(seg.map(c=>[c.lat,c.lon]), {
-      color:'#8b4513', weight:3, opacity:0.6, dashArray:'5, 8', pane:'ridgePane'
-    })
+  // Barbershop pattern: white casing underneath + black dashed on top. The
+  // white shows through the black gaps, giving an alternating black/white
+  // that no hike line can match (hikes are single-colored on a cream
+  // basemap). This is the standard cartographic convention for designated
+  // long-distance routes (NPS, Ordnance Survey), and reads pre-attentively
+  // as "official route" rather than "one more hike".
+  const toLatLngs = seg => seg.map(c => [c.lat, c.lon]);
+  const baseLines = ridgeSegments.map(seg =>
+    L.polyline(toLatLngs(seg), { color:'#ffffff', weight:4.5, opacity:1, pane:'ridgePane' })
   );
-  ridgeLayer = L.layerGroup(polylines);
+  const topLines = ridgeSegments.map(seg =>
+    L.polyline(toLatLngs(seg), { color:'#1a1a1a', weight:3, opacity:1, dashArray:'8 8', pane:'ridgePane' })
+  );
+  ridgeLayer = L.layerGroup([...baseLines, ...topLines]);
   ridgeLayer.addTo(map);
-  polylines.forEach(pl => pl.bindPopup(
-    `<div style="font-family:'Playfair Display',serif;font-size:13px;color:#2c2416">Bay Area Ridge Trail</div>
-     <div style="font-size:11px;color:#6b5e4a;margin-top:3px">${dispDist(ridgeTotalKm)} total · 123 segments</div>`
-  ));
+  const ridgePopup = `<div style="font-family:'Playfair Display',serif;font-size:13px;color:#2c2416">Bay Area Ridge Trail</div>
+     <div style="font-size:11px;color:#6b5e4a;margin-top:3px">${dispDist(ridgeTotalKm)} total · 123 segments</div>`;
+  [...baseLines, ...topLines].forEach(pl => pl.bindPopup(ridgePopup));
 }
 
 // ── coverage computation ──────────────────────────────────────────
@@ -760,10 +775,19 @@ function renderAll() {
     const ll=h.coords.map(c=>[c.lat,c.lon]);
     const line=L.polyline(ll,{color:s.color,weight:s.weight,opacity:s.opacity,dashArray:s.dashArray}).addTo(map);
     h.layer=line;
-    line.bindPopup(popupHTML(h,i));
-    line.on('click',()=>highlightSidebar(i));
-    L.circleMarker(ll[0],{radius:4,fillColor:'#4caf50',color:'#fff',weight:1.5,fillOpacity:1}).addTo(map);
-    L.circleMarker(ll[ll.length-1],{radius:4,fillColor:'#e53935',color:'#fff',weight:1.5,fillOpacity:1}).addTo(map);
+    // Bind popup + click to the visible line so focusHike()'s openPopup() still works.
+    const bindHit = (layer) => { layer.bindPopup(popupHTML(h,i)); layer.on('click',()=>highlightSidebar(i)); };
+    bindHit(line);
+    L.circleMarker(ll[0],{radius:4,fillColor:'#4caf50',color:'#fff',weight:1.5,fillOpacity:1,interactive:false}).addTo(map);
+    L.circleMarker(ll[ll.length-1],{radius:4,fillColor:'#e53935',color:'#fff',weight:1.5,fillOpacity:1,interactive:false}).addTo(map);
+    // Invisible wider hit geometry so 2.5–4 px lines and 4 px end-dots are
+    // easy to tap — especially on touchscreens where pixel-precise hits
+    // aren't feasible. Added on top so clicks near (but not on) the visible
+    // line still open the popup. Opacity 0.001 (imperceptible) rather than 0
+    // because SVG's `visiblePainted` hit test can skip fully-transparent paint.
+    bindHit(L.polyline(ll,{color:'#000',weight:22,opacity:0.001}).addTo(map));
+    bindHit(L.circleMarker(ll[0],{radius:14,color:'#000',fillColor:'#000',weight:0,opacity:0.001,fillOpacity:0.001}).addTo(map));
+    bindHit(L.circleMarker(ll[ll.length-1],{radius:14,color:'#000',fillColor:'#000',weight:0,opacity:0.001,fillOpacity:0.001}).addTo(map));
   });
   updateSidebar(); updateStats();
   if(ridgeVisible&&ridgeSegments) recomputeCoverage();
@@ -796,7 +820,6 @@ function updateSidebar(){
     </div>`).join('');
   document.getElementById('hike-count').textContent=hikes.length;
   document.getElementById('add-more-btn').style.display='block';
-  document.getElementById('clear-btn').style.display='inline';
 }
 function updateStats(){
   const stats = document.getElementById('sidebar-stats');
@@ -879,7 +902,6 @@ function clearAll(){
   document.getElementById('drop-zone').classList.remove('hidden');
   document.getElementById('hike-count').textContent='0';
   document.getElementById('add-more-btn').style.display='none';
-  document.getElementById('clear-btn').style.display='none';
   document.getElementById('ridge-coverage-panel').style.display='none';
   // renderAll() inside applyOp also clears map layers.
 }
