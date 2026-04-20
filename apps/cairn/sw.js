@@ -1,5 +1,7 @@
-// Cairn Service Worker — bump CACHE on every apps/cairn/index.html change.
-const CACHE = 'cairn-v2';
+// Cairn Service Worker — bump CACHE alongside APP_VERSION in index.html on
+// every UI change. The two are compared on boot and any mismatch surfaces
+// on the settings page as a stale-SW tell.
+const CACHE = 'cairn-v3';
 
 // App shell + local assets precached on install. Relative URLs so this
 // works under any path prefix (e.g. /apps/cairn/ on Pages).
@@ -42,6 +44,16 @@ self.addEventListener('activate', (e) => {
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
+});
+
+// Answer version queries from the page so the settings panel can display
+// which CACHE is actually handling fetches. A mismatch with the HTML's
+// APP_VERSION signals the SW is stale and next refresh will still serve
+// old HTML out of cache.
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'get-cache-version' && e.ports && e.ports[0]) {
+    e.ports[0].postMessage({ cache: CACHE });
+  }
 });
 
 self.addEventListener('fetch', (e) => {

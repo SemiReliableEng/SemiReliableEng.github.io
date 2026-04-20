@@ -370,20 +370,37 @@
         <div class="settings-card">
           <div class="settings-hint">Disconnect GitHub sync. Your local hikes are not affected.</div>
           <button class="btn-danger" onclick="disconnectGitHub()">Disconnect GitHub</button>
+          <div class="settings-hint" style="margin-top:16px">Force update: unregister the service worker and drop all cached assets, then reload. Use this if the version line below shows a stale SW or a deploy isn't picking up on this device. Your hikes and GitHub settings are kept.</div>
+          <button class="btn-danger" onclick="forceUpdate()" style="margin-top:8px">Force Update</button>
         </div>
       </div>
+
+      <div class="settings-hint" style="text-align:center;font-family:var(--mono);font-size:11px;opacity:0.55;margin-top:20px" id="app-version-line">Version —</div>
 
     </div>
   </div>
 </div>
 
-<script>
+<script type="module">
+import {
+  isOpCoveredBySnapshot,
+  absorbIntoSnapshot,
+  readOpPayload,
+} from './snapshot.mjs';
+
 // ── constants ─────────────────────────────────────────────────────
 const APP_NAME = 'cairn';
+// Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
+// settings page alongside the active SW's CACHE (when they diverge),
+// which is the tell for "the SW is serving stale HTML on this device".
+const APP_VERSION = 'cairn-v3';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
 const UNITS_KEY = 'cairn_units';
+const SNAPSHOT_KEY = 'cairn_snapshot';
+// SNAPSHOT_SHA_KEY, COMPACT_SLOT_KEY, LAST_COMPACTION_KEY all live in the
+// sync-glue module block below, where they're the only code that touches them.
 // One-time clean-up of the pre-op-log snapshot key. Safe to leave in: no-op once removed.
 try { localStorage.removeItem('cairn-hikes-v1'); } catch {}
 const COVERAGE_M = 30;
@@ -422,11 +439,16 @@ function setUnits(u) {
   if (elevChart && elevChart._hikeIdx !== undefined) showElev(elevChart._hikeIdx);
 }
 
-// ── op log ────────────────────────────────────────────────────────
-// Append-only log of { opId, op, entityId, data, ts, deviceId }. Current
-// `hikes[]` is derived from the log via materialize(); all mutations go
-// through applyOp() so sync can stream them out.
-let ops = [];
+// ── op log + snapshot ─────────────────────────────────────────────
+// Data layer is WAL + snapshot: append-only op log of
+// { opId, op, entityId, data: { points, meta }, ts, deviceId } on top of a
+// periodically-compacted snapshot. Current `hikes[]` is materialized from
+// the snapshot seed + tail-op replay. All mutations go through applyOp()
+// so sync can stream them out; compaction happens in the sync-glue module
+// block below. See apps/cairn/CLAUDE.md "Data layer" and apps/cairn/snapshot.mjs
+// for the coverage-rule divergence from marginalia.
+let ops = [];          // merged log from all devices (minus snapshot-covered ops)
+let snapshot = null;   // { version, lastCompactedTs, live: { eid: { points, meta } }, tombstones: { eid: ts } }
 let deviceId = null;
 let opSeq = 0;
 
@@ -437,12 +459,28 @@ function loadOps() {
     if (!Array.isArray(ops)) ops = [];
   } catch { ops = []; }
 }
+function loadSnapshot() {
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_KEY);
+    snapshot = raw ? JSON.parse(raw) : null;
+  } catch { snapshot = null; }
+}
+function saveSnapshotToStorage(snap) {
+  try {
+    if (snap) localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
+    else localStorage.removeItem(SNAPSHOT_KEY);
+  } catch (e) {
+    console.warn('snapshot write failed', e);
+  }
+}
+
 // Drop redundant ops before persisting so localStorage doesn't blow past its
-// ~5–10MB quota when several devices have imported the same GPX corpus.
-// add-hike/delete-hike are idempotent per entityId: materializeInto only needs
-// one of each, so foreign duplicates are safe to shed. We always keep our own
-// ops because push reads them straight off `ops` (filtered by deviceId).
-// update-hike carries device-specific edits and is preserved verbatim.
+// ~5–10MB quota when the post-grace tail stacks across devices. The snapshot
+// already absorbs older ops; this dedupes the remaining tail so add-hike /
+// delete-hike ops that are logically idempotent-per-entityId don't hold
+// multiple copies. We always keep our own ops because push reads them
+// straight off `ops` (filtered by deviceId + coverage). update-hike carries
+// device-specific edits and is preserved verbatim.
 function minimalOpsForStorage() {
   const keptAddDel = new Map(); // `${op}:${entityId}` → chosen op
   const rest = [];
@@ -467,32 +505,6 @@ function saveOps() {
   } catch (e) {
     console.warn('localStorage full?', e);
   }
-}
-
-// Compact the local op log in place: drop ops this device authored whose
-// effect is already covered by another device's op for the same entityId.
-// Safe for add-hike (payload is deterministic from content-addressed
-// entityId) and delete-hike (idempotent). Update-hike is left alone since
-// its payload carries device-specific edits. Returns number of ops dropped.
-function compactLocalOps() {
-  if (!deviceId) return 0;
-  const remoteAdd = new Set();
-  const remoteDel = new Set();
-  for (const op of ops) {
-    if (op.deviceId === deviceId) continue;
-    if (op.op === 'add-hike')    remoteAdd.add(op.entityId);
-    if (op.op === 'delete-hike') remoteDel.add(op.entityId);
-  }
-  const before = ops.length;
-  ops = ops.filter(op => {
-    if (op.deviceId !== deviceId) return true;
-    if (op.op === 'add-hike'    && remoteAdd.has(op.entityId)) return false;
-    if (op.op === 'delete-hike' && remoteDel.has(op.entityId)) return false;
-    return true;
-  });
-  const dropped = before - ops.length;
-  if (dropped > 0) saveOps();
-  return dropped;
 }
 function ensureDeviceId() {
   let id = null;
@@ -546,22 +558,42 @@ function applyOp(opType, entityId, data) {
   window.cairnSync?.schedulePush();
 }
 
-// Replay ops in ts order into the target hikes array (in place, so existing
-// references like the Leaflet `layer` assignment in renderAll stay consistent).
+// Flatten a snapshot live entry or op payload into the { id, name, date,
+// distKm, elevGain, coords } shape that the render layer expects. Snapshot
+// and op payloads both store the split { points, meta } shape; the in-memory
+// hike object stays flat for the benefit of renderAll and the Leaflet layer
+// bookkeeping.
+function hydrateHike(id, points, meta) {
+  return {
+    id,
+    name: meta.name,
+    date: meta.date,
+    distKm: meta.distKm,
+    elevGain: meta.elevGain,
+    coords: denormalizeCoords(points || []),
+  };
+}
+
+// Replay ops in ts order into the target hikes array, seeded from the
+// snapshot's live map. In place so existing references (e.g. the Leaflet
+// `layer` assignment in renderAll) stay consistent.
 function materializeInto(target) {
   const byId = new Map();
+  if (snapshot && snapshot.live) {
+    for (const [id, state] of Object.entries(snapshot.live)) {
+      byId.set(id, hydrateHike(id, state.points || [], state.meta || {}));
+    }
+  }
   const sorted = ops.slice().sort((a, b) =>
     (a.ts - b.ts) || (a.opId < b.opId ? -1 : 1));
   for (const op of sorted) {
-    if (op.op === 'add-hike' && op.data) {
-      byId.set(op.entityId, {
-        id: op.entityId,
-        name: op.data.name,
-        date: op.data.date,
-        distKm: op.data.distKm,
-        elevGain: op.data.elevGain,
-        coords: denormalizeCoords(op.data.coords),
-      });
+    if (op.op === 'add-hike') {
+      const payload = readOpPayload(op);
+      byId.set(op.entityId, hydrateHike(op.entityId, payload.points, payload.meta));
+    } else if (op.op === 'update-hike') {
+      const payload = readOpPayload(op);
+      const existing = byId.get(op.entityId);
+      if (existing) Object.assign(existing, payload.meta || {});
     } else if (op.op === 'delete-hike') {
       byId.delete(op.entityId);
     }
@@ -877,15 +909,20 @@ async function loadFiles(files){
     return;
   }
 
-  // Batch: all new hikes from this import commit as one push.
+  // Batch: all new hikes from this import commit as one push. Payload is
+  // split into immutable `points` (entityId hashes this) and editable `meta`,
+  // so future metadata edits and a future move of points to a separate blob
+  // backend are both local changes rather than data migrations.
   const apply = () => {
     for (const { id, hike } of toAdd) {
       applyOp('add-hike', id, {
-        name: hike.name,
-        date: hike.date,
-        distKm: hike.distKm,
-        elevGain: hike.elevGain,
-        coords: normalizeCoords(hike.coords),
+        points: normalizeCoords(hike.coords),
+        meta: {
+          name: hike.name,
+          date: hike.date,
+          distKm: hike.distKm,
+          elevGain: hike.elevGain,
+        },
       });
     }
   };
@@ -917,7 +954,15 @@ document.getElementById('map').addEventListener('drop',e=>{e.preventDefault();lo
 // ── boot ──────────────────────────────────────────────────────────
 setUnits(localStorage.getItem(UNITS_KEY) === 'metric' ? 'metric' : 'imperial');
 ensureDeviceId();
+loadSnapshot();
 loadOps();
+// Snapshot already absorbs any op with ts <= lastCompactedTs whose outcome
+// matches. Drop those from the tail eagerly so they don't get re-persisted.
+if (snapshot) {
+  const before = ops.length;
+  ops = ops.filter(op => !isOpCoveredBySnapshot(op, snapshot));
+  if (ops.length !== before) saveOps();
+}
 materializeInto(hikes);
 if (hikes.length) {
   document.getElementById('drop-zone').classList.add('hidden');
@@ -927,13 +972,13 @@ if (hikes.length) {
 }
 
 // Re-render after the sync module pulls remote ops and merges them in.
-window.cairnOnOpsMerged = (mergedOps) => {
+// Snapshot-covered ops get filtered out here so the tail stays minimal.
+function onOpsMerged(mergedOps) {
   const hadHikes = hikes.length > 0;
-  ops = mergedOps.slice();
+  ops = snapshot
+    ? mergedOps.filter(op => !isOpCoveredBySnapshot(op, snapshot))
+    : mergedOps.slice();
   saveOps();
-  // Drop our ops that another device has already covered. This is what shrinks
-  // the per-device files over time — next push uploads the compacted subset.
-  const dropped = compactLocalOps();
   materializeInto(hikes);
   if (hikes.length) document.getElementById('drop-zone').classList.add('hidden');
   renderAll();
@@ -944,16 +989,52 @@ window.cairnOnOpsMerged = (mergedOps) => {
     const all = hikes.flatMap(h => h.coords.map(c => [c.lat, c.lon]));
     if (all.length) map.fitBounds(all, { padding: [40, 40] });
   }
-  // If compaction shrank our log, our remote file is now stale. Schedule a
-  // push so the file on GitHub reflects the smaller set.
-  if (dropped > 0) window.cairnSync?.schedulePush();
-};
+}
 
 // Device ops are the subset of `ops` authored by this device. The sync module
-// owns per-device files; it only pushes what this device wrote.
-window.cairnGetDeviceOps = () => ops.filter(op => op.deviceId === deviceId);
+// owns per-device files; it only pushes what this device wrote, minus any
+// ops already absorbed by the snapshot (which is how per-device files
+// shrink over time).
+function getDeviceOps() {
+  return ops.filter(op =>
+    op.deviceId === deviceId && !isOpCoveredBySnapshot(op, snapshot)
+  );
+}
 
-window.cairnCompactLocalOps = compactLocalOps;
+// ── State bridge to the sync-glue module block ────────────────────
+// Two <script type="module"> blocks coexist in this file: this one owns the
+// data layer and UI, and the sync-glue block below owns GitHub IO and the
+// compaction loop. They share state via this object (not via closure,
+// because modules have separate scopes).
+window.cairnState = {
+  DEVICE_ID: deviceId,
+  APP_VERSION,
+  get ops() { return ops; },
+  set ops(v) { ops = v; },
+  get snapshot() { return snapshot; },
+  set snapshot(v) { snapshot = v; },
+  get hikes() { return hikes; },
+  saveOps,
+  saveSnapshotToStorage,
+  materializeInto,
+  renderAll,
+  getDeviceOps,
+  onOpsMerged,
+  isOpCoveredBySnapshot,
+  absorbIntoSnapshot,
+  dropZoneHide: () => document.getElementById('drop-zone').classList.add('hidden'),
+};
+
+// onclick handlers in the HTML need these as globals; module scope doesn't
+// leak top-level declarations onto window the way a classic <script> does.
+window.setUnits = setUnits;
+window.toggleRidgeTrail = toggleRidgeTrail;
+window.openHikeList = openHikeList;
+window.closeHikeList = closeHikeList;
+window.showElev = showElev;
+window.closeElev = closeElev;
+window.focusHike = focusHike;
+window.clearAll = clearAll;
 </script>
 
 <!-- ══ SYNC MODULE GLUE ══════════════════════════════════════════════ -->
@@ -962,8 +1043,24 @@ window.cairnCompactLocalOps = compactLocalOps;
 
   const APP_NAME = 'cairn';
   const SETTINGS_KEY = 'cairn_gh_settings';
+  const SNAPSHOT_SHA_KEY = 'cairn_snapshot_sha';
+  const COMPACT_SLOT_KEY = 'cairn_compaction_slot';
+  const LAST_COMPACTION_KEY = 'cairn_last_compaction_at';
   const SYNC_LOG_MAX = 40;
   const syncLog = [];
+
+  // Grace window: ops within this many ms of now are NOT absorbed during
+  // compaction. Keeps a freshly-created op from another device whose push
+  // is still in flight out of the snapshot until it's had a chance to land.
+  const COMPACT_GRACE_MS = 5 * 60 * 1000;
+  // Minimum between successful compactions. Combined with a per-device
+  // random weekly slot to spread compaction timing across devices.
+  const COMPACT_MIN_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+  // Minimum number of absorb-eligible ops to bother running a compaction.
+  const COMPACT_MIN_OPS = 10;
+
+  const state = window.cairnState;
+  if (!state) throw new Error('cairnState not initialized — inline <script type="module"> must run first');
 
   function getSettings() {
     try {
@@ -989,12 +1086,12 @@ window.cairnCompactLocalOps = compactLocalOps;
     }
   }
 
-  function setStatus(state, label) {
+  function setStatus(kind, label) {
     const pill = document.getElementById('sync-status');
     const lbl = document.getElementById('sync-label');
     if (!pill || !lbl) return;
     pill.classList.remove('syncing', 'ok', 'error');
-    if (state && state !== 'local') pill.classList.add(state);
+    if (kind && kind !== 'local') pill.classList.add(kind);
     lbl.textContent = label;
   }
 
@@ -1004,64 +1101,134 @@ window.cairnCompactLocalOps = compactLocalOps;
 
   const sync = PersonalSync.create({
     appName: APP_NAME,
-    deviceId: localStorage.getItem('cairn_device_id'),
+    deviceId: state.DEVICE_ID,
     getSettings,
-    getDeviceOps: () => window.cairnGetDeviceOps ? window.cairnGetDeviceOps() : [],
-    onOpsMerged: (allOps) => {
-      if (window.cairnOnOpsMerged) window.cairnOnOpsMerged(allOps);
-    },
+    getDeviceOps: () => state.getDeviceOps(),
+    onOpsMerged: (allOps) => state.onOpsMerged(allOps),
   });
   sync.on('log', appendLog);
   sync.on('status', setStatus);
 
-  // Policy: in pure-local mode (no settings yet) the sync module should be
-  // a no-op, not an error. Short-circuit push entry points before they emit
-  // "not configured" errors; pulls are opt-in from the UI so they're fine as-is.
   const _schedulePush = sync.schedulePush.bind(sync);
   const _pushNow = sync.pushNow.bind(sync);
   const _pull = sync.pull.bind(sync);
 
-  // Pull-before-push + compaction: before uploading this device's ops file,
-  // fetch remote so compactLocalOps() can drop ops another device already
-  // covers. If compaction empties our local set AND we have a file on GitHub,
-  // delete it so the per-device file doesn't linger as stale 10MB.
-  let pushInFlight = false;
-  let lastPullCompletedAt = 0;
+  // ── Snapshot IO (app-layer; the shared module is ops-only today) ─────
+  // Hard-coded under apps/cairn/ so it inherits the same isolation the
+  // module enforces for ops. If/when this pattern stabilizes across both
+  // apps it's a candidate for extraction into personal-sync.mjs.
+  const SNAPSHOT_REL = 'snapshot.json';
+  function snapshotUrl(settings) {
+    return `https://api.github.com/repos/${settings.username}/${settings.repo}/contents/apps/${APP_NAME}/${SNAPSHOT_REL}`;
+  }
+  function ghHeaders(token) {
+    return {
+      Authorization: `token ${token}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/vnd.github.v3+json',
+    };
+  }
+  function b64encode(str) { return btoa(unescape(encodeURIComponent(str))); }
+  function b64decode(b64) { return decodeURIComponent(escape(atob(String(b64).replace(/\n/g, '')))); }
 
-  // Track pull recency so pushNow can skip an immediately-redundant pull
-  // (e.g. the boot pull → compact → schedulePush → pushNow chain).
+  async function fetchSnapshot(settings) {
+    const res = await fetch(snapshotUrl(settings), { headers: ghHeaders(settings.token) });
+    if (res.status === 404) return { snapshot: null, sha: null };
+    if (!res.ok) throw new Error(`snapshot GET ${res.status}`);
+    const data = await res.json();
+    let b64 = data?.content;
+    // Contents API returns empty content for files >1MB. Fall back to git blob API.
+    if (!b64 && data?.sha) {
+      const blobRes = await fetch(
+        `https://api.github.com/repos/${settings.username}/${settings.repo}/git/blobs/${data.sha}`,
+        { headers: ghHeaders(settings.token) }
+      );
+      if (blobRes.ok) {
+        const blobData = await blobRes.json();
+        if (blobData?.encoding === 'base64') b64 = blobData.content;
+      }
+    }
+    if (!b64) return { snapshot: null, sha: data?.sha || null };
+    const parsed = JSON.parse(b64decode(b64));
+    return { snapshot: parsed, sha: data.sha };
+  }
+
+  async function putSnapshot(settings, snap, sha, message) {
+    const body = {
+      message: message || `apps/${APP_NAME}/snapshot.json: compaction`,
+      content: b64encode(JSON.stringify(snap)),
+      ...(sha ? { sha } : {}),
+    };
+    const res = await fetch(snapshotUrl(settings), {
+      method: 'PUT',
+      headers: ghHeaders(settings.token),
+      body: JSON.stringify(body),
+    });
+    if (res.status === 409 || res.status === 422) return { status: 'conflict' };
+    if (!res.ok) return { status: 'error', code: res.status };
+    const data = await res.json();
+    return { status: 'ok', sha: data?.content?.sha };
+  }
+
+  // ── Pull wrapper: refresh snapshot alongside ops ─────────────────────
+  // Fetch the remote snapshot first so that the filter-covered-ops pass in
+  // onOpsMerged uses the newest snapshot. On the 404-empty-ops path the
+  // module returns early without invoking onOpsMerged, so if we just
+  // updated the snapshot we trigger a local re-materialize ourselves.
   sync.pull = async () => {
-    const r = await _pull();
-    lastPullCompletedAt = Date.now();
-    return r;
+    const settings = getSettings();
+    let snapshotChanged = false;
+    if (settings) {
+      try {
+        appendLog('↻ Fetching snapshot…');
+        const { snapshot: remoteSnap, sha } = await fetchSnapshot(settings);
+        if (remoteSnap) {
+          state.snapshot = remoteSnap;
+          state.saveSnapshotToStorage(remoteSnap);
+          if (sha) localStorage.setItem(SNAPSHOT_SHA_KEY, sha);
+          snapshotChanged = true;
+          const liveCount = Object.keys(remoteSnap.live || {}).length;
+          appendLog(`✓ Snapshot loaded (${liveCount} live hikes)`);
+        } else {
+          appendLog('↳ No remote snapshot');
+        }
+      } catch (e) {
+        appendLog(`⚠ Snapshot fetch failed: ${e.message}`);
+      }
+    }
+    const result = await _pull();
+    if (snapshotChanged && result && result.initialized === false) {
+      state.onOpsMerged(state.ops);
+    }
+    return result;
   };
 
+  // ── Push wrapper: empty-after-coverage case deletes the remote file ──
+  // After compaction absorbs our ops into the snapshot, getDeviceOps()
+  // returns [] and the shared module would skip the PUT silently — leaving
+  // a stale file (potentially many MB) sitting on GitHub. Delete it instead.
+  let pushInFlight = false;
   async function deleteDeviceFile(settings) {
     const sha = localStorage.getItem('cairn_device_ops_sha');
-    if (!sha) return; // nothing on GitHub to delete
-    const devId = localStorage.getItem('cairn_device_id');
-    const url = `https://api.github.com/repos/${settings.username}/${settings.repo}/contents/apps/${APP_NAME}/ops/${devId}.json`;
+    if (!sha) return;
+    const url = `https://api.github.com/repos/${settings.username}/${settings.repo}/contents/apps/${APP_NAME}/ops/${state.DEVICE_ID}.json`;
     try {
       const res = await fetch(url, {
         method: 'DELETE',
-        headers: {
-          Authorization: `token ${settings.token}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/vnd.github.v3+json',
-        },
+        headers: ghHeaders(settings.token),
         body: JSON.stringify({
-          message: `apps/${APP_NAME}/ops/${devId}: compacted to empty`,
+          message: `apps/${APP_NAME}/ops/${state.DEVICE_ID}: absorbed into snapshot`,
           sha,
         }),
       });
       if (res.ok) {
         localStorage.removeItem('cairn_device_ops_sha');
-        appendLog('✓ Compacted to empty; removed remote file');
+        appendLog('✓ Device file absorbed into snapshot; removed remote');
       } else {
-        appendLog(`✗ Delete failed: ${res.status}`);
+        appendLog(`✗ Device file delete failed: ${res.status}`);
       }
     } catch (e) {
-      appendLog(`✗ Delete error: ${e.message}`);
+      appendLog(`✗ Device file delete error: ${e.message}`);
     }
   }
 
@@ -1075,14 +1242,7 @@ window.cairnCompactLocalOps = compactLocalOps;
     if (pushInFlight) return;
     pushInFlight = true;
     try {
-      // Skip pre-push pull if we just completed one — common when a pull's
-      // onOpsMerged triggered the schedulePush that brought us here.
-      if (Date.now() - lastPullCompletedAt > 5000) {
-        try { await sync.pull(); } catch { /* compact against local only */ }
-      }
-      window.cairnCompactLocalOps?.();
-      const localOps = window.cairnGetDeviceOps?.() || [];
-      if (localOps.length === 0) {
+      if (state.getDeviceOps().length === 0) {
         await deleteDeviceFile(settings);
         return;
       }
@@ -1091,6 +1251,128 @@ window.cairnCompactLocalOps = compactLocalOps;
       pushInFlight = false;
     }
   };
+
+  // ── Compaction ───────────────────────────────────────────────────────
+  function getOrInitSlot() {
+    const raw = localStorage.getItem(COMPACT_SLOT_KEY);
+    if (raw) { try { return JSON.parse(raw); } catch {} }
+    const slot = {
+      dow: Math.floor(Math.random() * 7),
+      hour: Math.floor(Math.random() * 24),
+      minute: Math.floor(Math.random() * 60),
+    };
+    localStorage.setItem(COMPACT_SLOT_KEY, JSON.stringify(slot));
+    return slot;
+  }
+  function nextSlotAfter(afterMs, slot) {
+    const d = new Date(afterMs);
+    d.setUTCSeconds(0, 0);
+    d.setUTCHours(slot.hour, slot.minute);
+    if (d.getTime() <= afterMs) d.setUTCDate(d.getUTCDate() + 1);
+    const delta = (slot.dow - d.getUTCDay() + 7) % 7;
+    d.setUTCDate(d.getUTCDate() + delta);
+    return d.getTime();
+  }
+
+  let compactionInFlight = false;
+  async function maybeCompact() {
+    if (compactionInFlight) return;
+    const settings = getSettings();
+    if (!settings) return;
+    const last = +localStorage.getItem(LAST_COMPACTION_KEY) || 0;
+    const slot = getOrInitSlot();
+    const scheduled = last === 0 ? 0 : nextSlotAfter(last, slot);
+    if (Date.now() < scheduled) return;
+    if (last && Date.now() - last < COMPACT_MIN_INTERVAL_MS) return;
+
+    compactionInFlight = true;
+    try {
+      await runCompaction(settings);
+    } catch (e) {
+      appendLog(`✗ Compaction error: ${e.message}`);
+    } finally {
+      compactionInFlight = false;
+    }
+  }
+
+  const KNOWN_OPS = new Set(['add-hike', 'update-hike', 'delete-hike']);
+
+  async function runCompaction(settings) {
+    let retries = 3;
+    while (retries-- > 0) {
+      await sync.pull();
+      const baseSnap = state.snapshot || { version: 1, lastCompactedTs: 0, live: {}, tombstones: {} };
+      const baseSha = localStorage.getItem(SNAPSHOT_SHA_KEY) || null;
+
+      // Absorb-eligible ops: newer than snapshot cutoff, older than the grace
+      // window, and of a type the snapshot understands. `update-hike` is
+      // absorbed here but the coverage rule still keeps all of them in the
+      // tail — update payloads diverge per device and can't be safely dropped.
+      const cutoff = Date.now() - COMPACT_GRACE_MS;
+      const toAbsorb = state.ops.filter(op =>
+        KNOWN_OPS.has(op.op) && op.ts > baseSnap.lastCompactedTs && op.ts <= cutoff
+      );
+      if (toAbsorb.length < COMPACT_MIN_OPS) {
+        appendLog(`… Compaction skipped (${toAbsorb.length} eligible op(s))`);
+        localStorage.setItem(LAST_COMPACTION_KEY, String(Date.now()));
+        return;
+      }
+
+      const newSnap = state.absorbIntoSnapshot(baseSnap, toAbsorb);
+      appendLog(`Compacting ${toAbsorb.length} ops into snapshot…`);
+
+      const result = await putSnapshot(
+        settings, newSnap, baseSha,
+        `apps/${APP_NAME}/snapshot.json: absorb ${toAbsorb.length} op(s)`,
+      );
+      if (result.status === 'conflict') {
+        appendLog('⚠ Snapshot conflict; re-pulling and retrying…');
+        continue;
+      }
+      if (result.status !== 'ok') {
+        appendLog(`✗ Snapshot PUT failed: ${result.code}`);
+        return;
+      }
+      if (result.sha) localStorage.setItem(SNAPSHOT_SHA_KEY, result.sha);
+
+      // Commit locally: swap in the new snapshot, drop covered ops, rerender.
+      state.snapshot = newSnap;
+      state.saveSnapshotToStorage(newSnap);
+      state.ops = state.ops.filter(op => !state.isOpCoveredBySnapshot(op, newSnap));
+      state.saveOps();
+      state.materializeInto(state.hikes);
+      state.renderAll();
+      localStorage.setItem(LAST_COMPACTION_KEY, String(Date.now()));
+      appendLog(`✓ Compacted ${toAbsorb.length} op(s) into snapshot`);
+
+      // Upload our now-thinner device file (or delete it if empty).
+      sync.schedulePush();
+      return;
+    }
+    appendLog('✗ Compaction gave up after 3 retries');
+  }
+
+  // Seed our local snapshot to remote when the remote lacks one. Needed
+  // after a first-time or repo-switched connection where the local state
+  // got compacted locally but the new remote has nothing in snapshot.json.
+  // Idempotent: only PUTs when SNAPSHOT_SHA_KEY is absent.
+  async function seedSnapshotIfNeeded() {
+    const settings = getSettings();
+    if (!settings) return;
+    if (!state.snapshot) return;
+    if (localStorage.getItem(SNAPSHOT_SHA_KEY)) return;
+    appendLog('↳ Seeding local snapshot to remote…');
+    const result = await putSnapshot(
+      settings, state.snapshot, null,
+      `apps/${APP_NAME}/snapshot.json: seed`,
+    );
+    if (result.status === 'ok' && result.sha) {
+      localStorage.setItem(SNAPSHOT_SHA_KEY, result.sha);
+      appendLog('✓ Snapshot seeded');
+    } else {
+      appendLog(`✗ Snapshot seed failed: ${result.code || result.status}`);
+    }
+  }
 
   window.cairnSync = sync;
 
@@ -1123,7 +1405,6 @@ window.cairnCompactLocalOps = compactLocalOps;
       showGhStatus('All three fields are required.', true);
       return;
     }
-    // Probe the repo with a cheap authenticated call before we save.
     showGhStatus('Testing connection…', false);
     try {
       const res = await fetch(`https://api.github.com/repos/${username}/${repo}`, {
@@ -1138,19 +1419,24 @@ window.cairnCompactLocalOps = compactLocalOps;
       return;
     }
     setSettings({ username, repo, token });
+    // Switching repos invalidates cached SHAs (they point at the old repo).
+    localStorage.removeItem('cairn_device_ops_sha');
+    localStorage.removeItem(SNAPSHOT_SHA_KEY);
     showGhStatus('✓ Connected. Pulling existing data…', false);
     appendLog(`✓ Settings saved (${username}/${repo})`);
     await sync.pull();
+    await seedSnapshotIfNeeded();
     await sync.pushNow();
   };
 
-  window.syncNow = async () => { await sync.syncNow(); };
+  window.syncNow = async () => { await sync.syncNow(); await maybeCompact(); };
   window.syncPullOnly = async () => { await sync.pull(); };
 
   window.disconnectGitHub = () => {
     if (!confirm('Disconnect GitHub sync? Your local hikes are not affected.')) return;
     clearSettings();
     localStorage.removeItem('cairn_device_ops_sha');
+    localStorage.removeItem(SNAPSHOT_SHA_KEY);
     setStatus(null, 'local');
     appendLog('✓ GitHub disconnected');
     document.getElementById('gh-username').value = '';
@@ -1158,22 +1444,71 @@ window.cairnCompactLocalOps = compactLocalOps;
     document.getElementById('gh-status-row').style.display = 'none';
   };
 
-  // Auto-pull on boot if settings are present, so a fresh tab sees remote ops.
+  // Unregister the SW and clear every cache, then reload. localStorage is
+  // untouched, so hikes/settings/SHAs survive. Escape hatch for Android PWAs
+  // that get wedged on a stale cache that a normal refresh doesn't clear.
+  window.forceUpdate = async () => {
+    if (!confirm('Force update? The app will reload and re-download assets. Your data is kept.')) return;
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+    } catch (e) {
+      appendLog(`⚠ Force update error: ${e.message}`);
+    } finally {
+      location.reload();
+    }
+  };
+
+  // ── Boot ─────────────────────────────────────────────────────────
   if (getSettings()) {
-    sync.pull().catch(() => {});
+    (async () => {
+      await sync.pull();
+      await seedSnapshotIfNeeded();
+      if (state.getDeviceOps().length) await sync.pushNow();
+      await maybeCompact();
+    })().catch(() => {});
   }
 
-  // Pull again whenever the tab becomes visible — covers the common case of
-  // switching from one device to another without hitting "Sync Now" first.
-  // Guard against rapid fires (e.g. alt-tab spam) with a 10s floor.
+  // Pull again on tab focus so returning to the app picks up pushes from
+  // other devices without a manual Sync Now. 10s floor against alt-tab spam.
   let lastAutoPull = Date.now();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     if (!getSettings()) return;
     if (Date.now() - lastAutoPull < 10_000) return;
     lastAutoPull = Date.now();
-    sync.pull().catch(() => {});
+    sync.pull().then(() => maybeCompact()).catch(() => {});
   });
+
+  // ── Version line (settings footer) ──────────────────────────────
+  // Show the HTML's declared version, then append the active SW's CACHE if
+  // it reports back. A mismatch means the SW is stale and the next refresh
+  // will still serve old HTML out of its cache.
+  (function renderVersionLine() {
+    const el = document.getElementById('app-version-line');
+    if (!el) return;
+    el.textContent = `Version ${state.APP_VERSION}`;
+    if (!navigator.serviceWorker) return;
+    navigator.serviceWorker.ready.then((reg) => {
+      const target = reg.active || navigator.serviceWorker.controller;
+      if (!target) return;
+      const chan = new MessageChannel();
+      chan.port1.onmessage = (ev) => {
+        const swCache = ev.data && ev.data.cache;
+        if (!swCache) return;
+        el.textContent = swCache === state.APP_VERSION
+          ? `Version ${state.APP_VERSION}`
+          : `Version ${state.APP_VERSION} · SW: ${swCache}`;
+      };
+      try { target.postMessage({ type: 'get-cache-version' }, [chan.port2]); } catch {}
+    }).catch(() => {});
+  })();
 </script>
 
 <script>
