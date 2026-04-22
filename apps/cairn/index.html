@@ -119,11 +119,6 @@
 
   #sidebar{width:260px;background:var(--md-surface-container-low);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;}
   .sidebar-header{padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
-  .sidebar-stats{display:none;padding:10px 16px;border-bottom:1px solid var(--border);gap:14px;align-items:baseline;justify-content:space-between;font-family:var(--mono);flex-shrink:0;}
-  .sidebar-stats.visible{display:flex;}
-  .sidebar-stat{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
-  .sidebar-stat-val{font-size:14px;font-weight:500;color:var(--ink);}
-  .sidebar-stat-label{font-size:9px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.08em;}
   .sidebar-close{display:none;background:none;border:none;color:var(--ink-soft);cursor:pointer;padding:6px;border-radius:var(--md-shape-full);width:32px;height:32px;align-items:center;justify-content:center;font-size:20px;line-height:1;}
   .sidebar-close:hover{background:var(--md-surface-container-high);}
 
@@ -150,14 +145,28 @@
   .add-more-btn:hover{border-color:var(--md-primary);color:var(--md-primary);background:var(--md-primary-container);}
   .empty-sidebar{padding:32px 20px;text-align:center;color:var(--ink-soft);font-size:13px;line-height:1.6;font-style:italic;}
 
-  #ridge-coverage-panel{background:var(--md-surface-container-highest);border-top:1px solid var(--border);padding:14px 16px;flex-shrink:0;display:none;}
-  .coverage-title{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);margin-bottom:8px;font-weight:500;}
-  .coverage-bar-bg{background:var(--md-surface-container-low);border-radius:var(--md-shape-full);height:8px;width:100%;overflow:hidden;margin-bottom:6px;border:1px solid var(--border);}
-  .coverage-bar-fill{height:100%;background:var(--md-primary);border-radius:var(--md-shape-full);transition:width .8s var(--md-motion-emphasized);}
-  .coverage-stats{display:flex;justify-content:space-between;align-items:baseline;}
-  .coverage-val{font-family:var(--mono);font-size:12px;color:var(--ink);font-weight:500;}
-  .coverage-pct{font-family:var(--mono);font-size:14px;color:var(--md-primary);font-weight:600;}
-  .coverage-note{font-size:10px;color:var(--ink-soft);margin-top:4px;opacity:0.8;}
+  /* Stats chip — floats over the map bottom-left; replaces the sidebar stats
+     strip and the old Ridge Trail coverage panel. Collapsed by default;
+     tap to expand into a card with per-stat rows + the coverage bar. */
+  #stats-chip{position:absolute;left:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:600;background:var(--md-surface-container-highest);border:1px solid var(--border);border-radius:var(--md-shape-full);box-shadow:0 2px 8px var(--shadow);font-family:var(--mono);display:none;max-width:calc(100% - 24px);overflow:hidden;}
+  #stats-chip.visible{display:block;}
+  #stats-chip.expanded{border-radius:var(--md-shape-md);}
+  .chip-collapsed{padding:8px 14px;font-size:12px;color:var(--ink);cursor:pointer;white-space:nowrap;user-select:none;display:block;}
+  #stats-chip.expanded .chip-collapsed{display:none;}
+  .chip-collapsed-bart{color:var(--md-primary);font-weight:500;}
+  .chip-expanded{display:none;padding:12px 14px;min-width:220px;}
+  #stats-chip.expanded .chip-expanded{display:block;}
+  .chip-expanded-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  .chip-expanded-title{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);font-weight:500;}
+  .chip-close{background:none;border:none;color:var(--ink-soft);cursor:pointer;padding:2px 4px;font-size:16px;line-height:1;border-radius:var(--md-shape-full);font-family:inherit;}
+  .chip-close:hover{background:var(--md-surface-container);}
+  .chip-row{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:3px 0;font-size:12px;}
+  .chip-row-label{color:var(--ink-soft);font-family:var(--sans);}
+  .chip-row-val{color:var(--ink);font-weight:500;}
+  .chip-bar-bg{background:var(--md-surface-container-low);border-radius:var(--md-shape-full);height:8px;width:100%;overflow:hidden;margin:6px 0 4px;border:1px solid var(--border);}
+  .chip-bar-fill{height:100%;background:var(--md-primary);border-radius:var(--md-shape-full);transition:width .8s var(--md-motion-emphasized);}
+  .chip-note{font-family:var(--sans);font-size:10px;color:var(--ink-soft);opacity:0.8;}
+  .chip-bart-group{margin-top:6px;padding-top:8px;border-top:1px solid var(--border);}
 
   .leaflet-popup-content-wrapper{background:var(--md-surface-container-low);border:none;border-radius:var(--md-shape-lg);box-shadow:var(--md-elevation-3);font-family:var(--sans);padding:4px;}
   .leaflet-popup-tip{background:var(--md-surface-container-low);}
@@ -269,6 +278,22 @@
         <button class="drop-btn" onclick="document.getElementById('file-input').click()">Choose GPX Files</button>
         <input type="file" id="file-input" accept=".gpx" multiple/>
       </div>
+      <div id="stats-chip" role="button" tabindex="0" aria-label="Toggle stats detail">
+        <div class="chip-collapsed" id="chip-collapsed">—</div>
+        <div class="chip-expanded">
+          <div class="chip-expanded-header">
+            <span class="chip-expanded-title">Stats</span>
+            <button class="chip-close" type="button" aria-label="Collapse">×</button>
+          </div>
+          <div class="chip-row"><span class="chip-row-label">Total distance</span><span class="chip-row-val" id="chip-dist">—</span></div>
+          <div class="chip-row"><span class="chip-row-label">Elevation gain</span><span class="chip-row-val" id="chip-elev">—</span></div>
+          <div class="chip-bart-group" id="chip-bart-group" style="display:none">
+            <div class="chip-row"><span class="chip-row-label">Ridge Trail</span><span class="chip-row-val" id="chip-bart-val">—</span></div>
+            <div class="chip-bar-bg"><div class="chip-bar-fill" id="chip-bar-fill" style="width:0%"></div></div>
+            <div class="chip-note" id="chip-note">within 30 m of Ridge Trail</div>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="elev-panel">
       <div id="elev-inner">
@@ -289,20 +314,7 @@
         <button class="sidebar-close" onclick="closeHikeList()" aria-label="Close">×</button>
       </div>
     </div>
-    <div class="sidebar-stats" id="sidebar-stats">
-      <div class="sidebar-stat"><span class="sidebar-stat-val" id="stat-dist">0.0</span><span class="sidebar-stat-label" id="lbl-dist">Total mi</span></div>
-      <div class="sidebar-stat"><span class="sidebar-stat-val" id="stat-elev">0</span><span class="sidebar-stat-label" id="lbl-elev">Elev gain ft</span></div>
-    </div>
     <div id="hike-list"><div class="empty-sidebar">Load GPX files to see your hikes here</div></div>
-    <div id="ridge-coverage-panel">
-      <div class="coverage-title">Ridge Trail Coverage</div>
-      <div class="coverage-bar-bg"><div class="coverage-bar-fill" id="coverage-fill" style="width:0%"></div></div>
-      <div class="coverage-stats">
-        <span class="coverage-val" id="coverage-dist">—</span>
-        <span class="coverage-pct" id="coverage-pct">—</span>
-      </div>
-      <div class="coverage-note" id="coverage-note">within 30 m of Ridge Trail</div>
-    </div>
     <button class="add-more-btn" id="add-more-btn" style="display:none" onclick="document.getElementById('file-input').click()">+ Add more GPX files</button>
   </div>
 </main>
@@ -404,7 +416,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v7';
+const APP_VERSION = 'cairn-v8';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -620,7 +632,7 @@ function hasHike(hikeId) {
 
 
 // ── map setup ─────────────────────────────────────────────────────
-const map = L.map('map', { zoomControl: true }).setView([37.7, -122.2], 9);
+const map = L.map('map', { zoomControl: false }).setView([37.7, -122.2], 9);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
   subdomains: 'abcd',
@@ -669,18 +681,18 @@ function toggleRidgeTrail(on) {
   if (!on) {
     if (ridgeLayer) map.removeLayer(ridgeLayer);
     document.getElementById('ridge-status').textContent = '';
-    document.getElementById('ridge-coverage-panel').style.display = 'none';
+    renderChip();
     return;
   }
   // Already built
   if (ridgeSegments) {
     ridgeLayer.addTo(map);
-    if (hikes.length) { document.getElementById('ridge-coverage-panel').style.display='block'; recomputeCoverage(); }
+    if (hikes.length) recomputeCoverage();
     return;
   }
   // Build from embedded static data — instant, no network needed
   buildRidgeFromSegments(RIDGE_STATIC);
-  if (hikes.length) { document.getElementById('ridge-coverage-panel').style.display='block'; recomputeCoverage(); }
+  if (hikes.length) recomputeCoverage();
 }
 
 function setRidgeStatus(msg) {
@@ -749,13 +761,42 @@ function recomputeCoverage() {
   updateCoverageUI();
 }
 
-function updateCoverageUI() {
-  if (ridgeCoverageKm===null||ridgeTotalKm===null) return;
-  const pct = Math.min(100, (ridgeCoverageKm/ridgeTotalKm)*100);
-  document.getElementById('coverage-fill').style.width = pct.toFixed(1)+'%';
-  document.getElementById('coverage-dist').textContent = dispDist(ridgeCoverageKm)+' covered';
-  document.getElementById('coverage-pct').textContent = pct.toFixed(1)+'%';
-  document.getElementById('coverage-note').textContent = 'of '+dispDist(ridgeTotalKm)+' total · within '+COVERAGE_M+'m';
+function updateCoverageUI() { renderChip(); }
+
+// ── stats chip ────────────────────────────────────────────────────
+// One surface for all three stats (total distance, elevation gain,
+// Ridge Trail coverage). Floats over the map bottom-left; collapsed
+// by default. BART segment only renders when the Ridge Trail toggle
+// is on and coverage has been computed.
+function renderChip() {
+  const chip = document.getElementById('stats-chip');
+  if (!hikes.length) { chip.classList.remove('visible', 'expanded'); return; }
+  const dk = hikes.reduce((s,h)=>s+h.distKm, 0);
+  const em = hikes.reduce((s,h)=>s+h.elevGain, 0);
+  const distStr = rawDist(dk).toFixed(1) + ' ' + distUnit();
+  const elevStr = Math.round(rawElev(em)).toLocaleString() + ' ' + elevUnit();
+  document.getElementById('chip-dist').textContent = distStr;
+  document.getElementById('chip-elev').textContent = elevStr;
+  const bartGroup = document.getElementById('chip-bart-group');
+  const coll = document.getElementById('chip-collapsed');
+  const bartOn = ridgeVisible && ridgeCoverageKm !== null && ridgeTotalKm !== null;
+  if (bartOn) {
+    const pct = Math.min(100, (ridgeCoverageKm / ridgeTotalKm) * 100);
+    const miles = rawDist(ridgeCoverageKm).toFixed(1) + '/' + rawDist(ridgeTotalKm).toFixed(1) + ' ' + distUnit();
+    document.getElementById('chip-bart-val').textContent = miles;
+    document.getElementById('chip-bar-fill').style.width = pct.toFixed(1) + '%';
+    document.getElementById('chip-note').textContent = 'within ' + COVERAGE_M + ' m of Ridge Trail';
+    bartGroup.style.display = 'block';
+    coll.textContent = distStr + ' · ';
+    const span = document.createElement('span');
+    span.className = 'chip-collapsed-bart';
+    span.textContent = 'BART ' + miles + ' · ' + pct.toFixed(1) + '%';
+    coll.appendChild(span);
+  } else {
+    bartGroup.style.display = 'none';
+    coll.textContent = distStr;
+  }
+  chip.classList.add('visible');
 }
 
 // ── distance bands ────────────────────────────────────────────────
@@ -824,17 +865,7 @@ function updateSidebar(){
   document.getElementById('hike-count').textContent=hikes.length;
   document.getElementById('add-more-btn').style.display='block';
 }
-function updateStats(){
-  const stats = document.getElementById('sidebar-stats');
-  if (!hikes.length) { stats.classList.remove('visible'); return; }
-  const dk = hikes.reduce((s,h)=>s+h.distKm,0);
-  const em = hikes.reduce((s,h)=>s+h.elevGain,0);
-  document.getElementById('stat-dist').textContent = rawDist(dk).toFixed(1);
-  document.getElementById('lbl-dist').textContent = 'Total ' + distUnit();
-  document.getElementById('stat-elev').textContent = Math.round(rawElev(em)).toLocaleString();
-  document.getElementById('lbl-elev').textContent = 'Elev gain ' + elevUnit();
-  stats.classList.add('visible');
-}
+function updateStats(){ renderChip(); }
 function focusHike(i){
   highlightSidebar(i);
   const h=hikes[i];
@@ -905,7 +936,7 @@ function clearAll(){
   document.getElementById('drop-zone').classList.remove('hidden');
   document.getElementById('hike-count').textContent='0';
   document.getElementById('add-more-btn').style.display='none';
-  document.getElementById('ridge-coverage-panel').style.display='none';
+  renderChip();
   // renderAll() inside applyOp also clears map layers.
 }
 
@@ -961,10 +992,7 @@ async function loadFiles(files){
   document.getElementById('drop-zone').classList.add('hidden');
   const all = hikes.flatMap(h => h.coords.map(c => [c.lat, c.lon]));
   if (all.length) map.fitBounds(all, { padding: [40, 40] });
-  if (ridgeVisible && ridgeSegments) {
-    document.getElementById('ridge-coverage-panel').style.display = 'block';
-    recomputeCoverage();
-  }
+  if (ridgeVisible && ridgeSegments) recomputeCoverage();
 }
 
 // ── events ────────────────────────────────────────────────────────
@@ -975,6 +1003,23 @@ dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
 dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');loadFiles(e.dataTransfer.files);});
 document.getElementById('map').addEventListener('dragover',e=>e.preventDefault());
 document.getElementById('map').addEventListener('drop',e=>{e.preventDefault();loadFiles(e.dataTransfer.files);});
+
+// Stats chip: tap collapsed pill to expand, ✕ (or map click) to collapse.
+(function wireChip(){
+  const chip = document.getElementById('stats-chip');
+  chip.querySelector('.chip-collapsed').addEventListener('click', e => {
+    e.stopPropagation();
+    chip.classList.add('expanded');
+  });
+  chip.querySelector('.chip-close').addEventListener('click', e => {
+    e.stopPropagation();
+    chip.classList.remove('expanded');
+  });
+  // Swallow clicks on the expanded card so the map handler below doesn't
+  // collapse it while the user is reading.
+  chip.querySelector('.chip-expanded').addEventListener('click', e => e.stopPropagation());
+  map.on('click', () => chip.classList.remove('expanded'));
+})();
 
 // ── boot ──────────────────────────────────────────────────────────
 setUnits(localStorage.getItem(UNITS_KEY) === 'metric' ? 'metric' : 'imperial');
