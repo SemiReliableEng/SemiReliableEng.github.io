@@ -151,9 +151,13 @@
   #stats-chip{position:absolute;left:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:600;background:var(--md-surface-container-highest);border:1px solid var(--border);border-radius:var(--md-shape-full);box-shadow:0 2px 8px var(--shadow);font-family:var(--mono);display:none;max-width:calc(100% - 24px);overflow:hidden;}
   #stats-chip.visible{display:block;}
   #stats-chip.expanded{border-radius:var(--md-shape-md);}
-  .chip-collapsed{padding:8px 14px;font-size:12px;color:var(--ink);cursor:pointer;white-space:nowrap;user-select:none;display:block;}
+  .chip-collapsed{padding:7px 14px;cursor:pointer;user-select:none;display:block;}
   #stats-chip.expanded .chip-collapsed{display:none;}
-  .chip-collapsed-bart{color:var(--md-primary);font-weight:500;}
+  .chip-line{font-size:12px;line-height:1.45;color:var(--ink);white-space:nowrap;}
+  .chip-line + .chip-line{margin-top:1px;}
+  .chip-line.chip-bart{color:var(--md-primary);font-weight:500;}
+  .chip-label{font-size:10px;letter-spacing:.08em;color:var(--ink-soft);font-weight:500;margin-right:5px;}
+  .chip-line.chip-bart .chip-label{color:var(--md-primary);opacity:.7;}
   .chip-expanded{display:none;padding:12px 14px;min-width:220px;}
   #stats-chip.expanded .chip-expanded{display:block;}
   .chip-expanded-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
@@ -279,7 +283,10 @@
         <input type="file" id="file-input" accept=".gpx" multiple/>
       </div>
       <div id="stats-chip" role="button" tabindex="0" aria-label="Toggle stats detail">
-        <div class="chip-collapsed" id="chip-collapsed">—</div>
+        <div class="chip-collapsed">
+          <div class="chip-line" id="chip-total-line">—</div>
+          <div class="chip-line chip-bart" id="chip-bart-line" style="display:none">—</div>
+        </div>
         <div class="chip-expanded">
           <div class="chip-expanded-header">
             <span class="chip-expanded-title">Stats</span>
@@ -416,7 +423,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v8';
+const APP_VERSION = 'cairn-v9';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -774,11 +781,20 @@ function renderChip() {
   const dk = hikes.reduce((s,h)=>s+h.distKm, 0);
   const em = hikes.reduce((s,h)=>s+h.elevGain, 0);
   const distStr = rawDist(dk).toFixed(1) + ' ' + distUnit();
-  const elevStr = Math.round(rawElev(em)).toLocaleString() + ' ' + elevUnit();
+  const elevStrLong = Math.round(rawElev(em)).toLocaleString() + ' ' + elevUnit();
+  // Collapsed uses a K-suffix (thousands) to stay one-line-wide on mobile;
+  // expanded shows the full-precision integer.
+  const elevStrShort = (rawElev(em) / 1000).toFixed(1) + 'K ' + elevUnit();
   document.getElementById('chip-dist').textContent = distStr;
-  document.getElementById('chip-elev').textContent = elevStr;
+  document.getElementById('chip-elev').textContent = elevStrLong;
+  const totalLine = document.getElementById('chip-total-line');
+  totalLine.textContent = '';
+  const lblTotal = document.createElement('span');
+  lblTotal.className = 'chip-label';
+  lblTotal.textContent = 'TOTAL';
+  totalLine.append(lblTotal, distStr + ' · ' + elevStrShort);
   const bartGroup = document.getElementById('chip-bart-group');
-  const coll = document.getElementById('chip-collapsed');
+  const bartLine = document.getElementById('chip-bart-line');
   const bartOn = ridgeVisible && ridgeCoverageKm !== null && ridgeTotalKm !== null;
   if (bartOn) {
     const pct = Math.min(100, (ridgeCoverageKm / ridgeTotalKm) * 100);
@@ -787,14 +803,15 @@ function renderChip() {
     document.getElementById('chip-bar-fill').style.width = pct.toFixed(1) + '%';
     document.getElementById('chip-note').textContent = 'within ' + COVERAGE_M + ' m of Ridge Trail';
     bartGroup.style.display = 'block';
-    coll.textContent = distStr + ' · ';
-    const span = document.createElement('span');
-    span.className = 'chip-collapsed-bart';
-    span.textContent = 'BART ' + miles + ' · ' + pct.toFixed(1) + '%';
-    coll.appendChild(span);
+    bartLine.textContent = '';
+    const lblBart = document.createElement('span');
+    lblBart.className = 'chip-label';
+    lblBart.textContent = 'BART';
+    bartLine.append(lblBart, miles + ' · ' + pct.toFixed(1) + '%');
+    bartLine.style.display = 'block';
   } else {
     bartGroup.style.display = 'none';
-    coll.textContent = distStr;
+    bartLine.style.display = 'none';
   }
   chip.classList.add('visible');
 }
