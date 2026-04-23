@@ -1,7 +1,7 @@
 // Cairn Service Worker — bump CACHE alongside APP_VERSION in index.html on
 // every UI change. The two are compared on boot and any mismatch surfaces
 // on the settings page as a stale-SW tell.
-const CACHE = 'cairn-v8';
+const CACHE = 'cairn-v10';
 
 // App shell + local assets precached on install. Relative URLs so this
 // works under any path prefix (e.g. /apps/cairn/ on Pages).
