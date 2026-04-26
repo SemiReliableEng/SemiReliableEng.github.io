@@ -11,18 +11,30 @@
 //   TILES_CACHE       — runtime + trail-prefetched tiles. Survives shell bumps
 //                       so the page-side prefetch (z10-15 along Ridge Trail +
 //                       imported hikes) doesn't get wiped on every UI release.
-const CACHE = 'cairn-v14';
+const CACHE = 'cairn-v15';
 const BASE_TILES_CACHE = 'cairn-tiles-base-v1';
 const TILES_CACHE = 'cairn-tiles-v1';
 
 // App shell + local assets precached on install. Relative URLs so this
 // works under any path prefix (e.g. /apps/cairn/ on Pages).
+//
+// Every module that index.html imports must live here. Otherwise the SW's
+// CACHE bumps in lockstep with index.html, but the local .mjs imports fall
+// through to the runtime fetch path — which on a v(N-1) → vN upgrade can
+// serve a stale .mjs from the browser's HTTP cache while serving the new
+// index.html from the SW. Result: an `import { newExport } from './x.mjs'`
+// fails, the module errors out before window.* button bindings run, and
+// every onclick="" handler in the HTML lands on `undefined`. The
+// only-symptom-on-installed-PWA-not-incognito profile in v14 was exactly
+// this; snapshot.mjs had been missing from this list since 948faf0 but the
+// hazard was latent until ceef6cf added new required exports.
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
+  './snapshot.mjs',
   './shared/personal-sync.mjs',
 ];
 
