@@ -266,6 +266,14 @@
     #stats-chip,
     #locate-btn{bottom:calc(64px + env(safe-area-inset-bottom));}
   }
+  /* PWA-installed mode has no browser URL bar to clear, so the 64px lift
+     above just becomes dead space above the attribution bar. Drop back to
+     the desktop offset; safe-area-inset-bottom still keeps the iOS home
+     indicator from overlapping. */
+  @media (max-width: 899px) and (display-mode: standalone) {
+    #stats-chip,
+    #locate-btn{bottom:calc(12px + env(safe-area-inset-bottom));}
+  }
 </style>
 </head>
 <body>
@@ -481,7 +489,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v12';
+const APP_VERSION = 'cairn-v13';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';

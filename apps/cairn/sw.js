@@ -11,7 +11,7 @@
 //   TILES_CACHE       — runtime + trail-prefetched tiles. Survives shell bumps
 //                       so the page-side prefetch (z10-15 along Ridge Trail +
 //                       imported hikes) doesn't get wiped on every UI release.
-const CACHE = 'cairn-v12';
+const CACHE = 'cairn-v13';
 const BASE_TILES_CACHE = 'cairn-tiles-base-v1';
 const TILES_CACHE = 'cairn-tiles-v1';
 
