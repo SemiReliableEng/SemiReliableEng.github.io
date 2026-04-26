@@ -482,6 +482,8 @@ import {
   isOpCoveredBySnapshot,
   absorbIntoSnapshot,
   readOpPayload,
+  readSnapshotPoints,
+  packPoints,
 } from './snapshot.mjs';
 
 // ── constants ─────────────────────────────────────────────────────
@@ -489,7 +491,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v13';
+const APP_VERSION = 'cairn-v14';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -657,10 +659,11 @@ function applyOp(opType, entityId, data) {
 
 // Flatten a snapshot live entry or op payload into the { id, name, date,
 // distKm, elevGain, coords } shape that the render layer expects. Snapshot
-// and op payloads both store the split { points, meta } shape; the in-memory
-// hike object stays flat for the benefit of renderAll and the Leaflet layer
-// bookkeeping. `dateMs` is derived once here so the sidebar sort isn't
-// re-parsing localized date strings on every render.
+// and op payloads both store a split shape (current: { pointsPacked, meta };
+// legacy: { points, meta }); the in-memory hike object stays flat for the
+// benefit of renderAll and the Leaflet layer bookkeeping. `dateMs` is
+// derived once here so the sidebar sort isn't re-parsing localized date
+// strings on every render.
 function hydrateHike(id, points, meta) {
   const t = meta.date ? Date.parse(meta.date) : NaN;
   return {
@@ -681,7 +684,7 @@ function materializeInto(target) {
   const byId = new Map();
   if (snapshot && snapshot.live) {
     for (const [id, state] of Object.entries(snapshot.live)) {
-      byId.set(id, hydrateHike(id, state.points || [], state.meta || {}));
+      byId.set(id, hydrateHike(id, readSnapshotPoints(state), state.meta || {}));
     }
   }
   const sorted = ops.slice().sort((a, b) =>
@@ -1473,13 +1476,15 @@ async function loadFiles(files){
   }
 
   // Batch: all new hikes from this import commit as one push. Payload is
-  // split into immutable `points` (entityId hashes this) and editable `meta`,
-  // so future metadata edits and a future move of points to a separate blob
-  // backend are both local changes rather than data migrations.
+  // split into immutable track geometry (entityId hashes this; written as
+  // `pointsPacked` integer-delta-encoded for storage density — see
+  // packPoints in snapshot.mjs) and editable `meta`, so future metadata
+  // edits and a future move of points to a separate blob backend are both
+  // local changes rather than data migrations.
   const apply = () => {
     for (const { id, hike } of toAdd) {
       applyOp('add-hike', id, {
-        points: normalizeCoords(hike.coords),
+        pointsPacked: packPoints(normalizeCoords(hike.coords)),
         meta: {
           name: hike.name,
           date: hike.date,
