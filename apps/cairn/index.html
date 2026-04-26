@@ -425,6 +425,26 @@
       </div>
 
       <div class="settings-section">
+        <div class="settings-section-title">Offline Tiles</div>
+        <div class="settings-card">
+          <div class="settings-hint">Map tiles around the Bay Area Ridge Trail and your imported hikes are cached for offline use (z10-15). Caching pauses on slow or metered connections.</div>
+          <div class="display-row">
+            <span class="display-row-label">Auto-cache trail tiles</span>
+            <label class="ridge-toggle" for="tile-prefetch-checkbox">
+              <input type="checkbox" id="tile-prefetch-checkbox" onchange="togglePrefetchEnabled(this.checked)"/>
+              <span class="ridge-pill"></span>
+            </label>
+          </div>
+          <div class="sync-log" id="tile-status" style="margin-top:10px">—</div>
+          <div class="settings-row">
+            <button class="btn-secondary" id="tile-pause-btn" onclick="tilePrefetchPauseToggle()">Pause</button>
+            <button class="btn-secondary" onclick="tilePrefetchForce()">Force re-cache</button>
+            <button class="btn-secondary" onclick="tileClearCache()">Clear cache</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-title">Location</div>
         <div class="settings-card">
           <div class="sync-log" id="locate-log">No location activity yet.</div>
@@ -461,7 +481,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v11';
+const APP_VERSION = 'cairn-v12';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -1068,7 +1088,337 @@ function locateMe() {
   );
 }
 
-// ── clear all ─────────────────────────────────────────────────────
+// ── offline-tile prefetch ─────────────────────────────────────────
+// Caches CartoDB Voyager tiles around the Ridge Trail and imported hikes
+// at z10-15 so the map still renders on-trail when offline. Kicks off
+// automatically on boot (after a short idle delay) and resumes from
+// where it left off on reload — the cache itself is the progress state,
+// so no separate progress key is needed.
+//
+// Cache layout (matches sw.js):
+//   cairn-tiles-base-v1  — z6-11 Bay Area, precached on SW install
+//   cairn-tiles-v1       — z10-15 trail buffer + any runtime tile fetches
+const TILES_CACHE = 'cairn-tiles-v1';
+const TILE_PREFETCH_ENABLED_KEY = 'cairn_tile_prefetch_enabled';
+const TILE_PERSIST_REQUESTED_KEY = 'cairn_tile_persist_requested';
+const TILE_BYTES_KEY = 'cairn_tile_bytes_cached';
+// z10 covers context, z15 is "see which fork to take" detail. Each step up
+// roughly quadruples tile count; z16 would push the total past 250 MB.
+const TILE_PREFETCH_ZOOMS = [10, 11, 12, 13, 14, 15];
+// Concurrency kept modest so the prefetch is polite to CartoDB and doesn't
+// starve the user's own map fetches when they pan around mid-prefetch.
+const TILE_FETCH_CONCURRENCY = 3;
+const TILE_PREFETCH_DELAY_MS = 5000;
+const TILE_SUBDOMAINS = ['a', 'b', 'c', 'd'];
+// Match Leaflet's L.Browser.retina: DPR ≥ 2 → request @2x tiles. Pre-fetching
+// the wrong variant means runtime cache misses, so we mirror the browser's
+// own decision here.
+const TILE_RETINA_SUFFIX = (typeof window !== 'undefined' && window.devicePixelRatio > 1) ? '@2x' : '';
+
+let tilePrefetchRunning = false;
+let tilePrefetchPaused = false;
+let tilePrefetchTimer = null;
+let tileTargetCount = 0;
+let tileCachedCount = 0;
+
+function tileEnabled() {
+  return localStorage.getItem(TILE_PREFETCH_ENABLED_KEY) !== '0';
+}
+function setTileEnabled(on) {
+  localStorage.setItem(TILE_PREFETCH_ENABLED_KEY, on ? '1' : '0');
+}
+function getTileBytes() {
+  return Number(localStorage.getItem(TILE_BYTES_KEY) || 0);
+}
+function setTileBytes(n) {
+  try { localStorage.setItem(TILE_BYTES_KEY, String(n)); } catch {}
+}
+function humanBytes(n) {
+  if (!n) return '0 B';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// Network guard: skip prefetch on offline / save-data / 2G connections.
+// iOS Safari doesn't expose navigator.connection — there we just check
+// onLine and trust the user's settings toggle as the off-switch.
+function tileSkipReason() {
+  if (!navigator.onLine) return 'offline';
+  const c = navigator.connection;
+  if (c?.saveData) return 'data saver on';
+  if (c?.effectiveType === '2g' || c?.effectiveType === 'slow-2g') return 'slow connection';
+  return null;
+}
+
+// ── tile coordinate math (Web Mercator, slippy-map convention) ────
+function lonToTileX(lon, z) {
+  return Math.floor((lon + 180) / 360 * (1 << z));
+}
+function latToTileY(lat, z) {
+  const r = lat * Math.PI / 180;
+  return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * (1 << z));
+}
+// Tile width in metres at the equator at zoom z. Used to pick a sampling
+// step along trail segments that's fine enough that we never skip a tile
+// along even the longest straight RDP-simplified leg.
+function tileWidthM(z) {
+  return 40075016.686 / (1 << z);
+}
+function tileSubdomain(x, y) {
+  return TILE_SUBDOMAINS[Math.abs(x + y) % TILE_SUBDOMAINS.length];
+}
+function tileUrl(z, x, y) {
+  return `https://${tileSubdomain(x, y)}.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}${TILE_RETINA_SUFFIX}.png`;
+}
+
+function metersBetween(aLat, aLon, bLat, bLon) {
+  const R = 6371000;
+  const dLat = (bLat - aLat) * Math.PI / 180;
+  const dLon = (bLon - aLon) * Math.PI / 180;
+  const lat1 = aLat * Math.PI / 180;
+  const lat2 = bLat * Math.PI / 180;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+// Walk a segment of [lat, lon] points at zoom z, dropping every tile the
+// path crosses into `tileSet`. Sampling step is tile-width/4 so even at
+// the high end of RDP simplification we don't skip a tile.
+function sampleSegmentToTiles(points, z, stepM, tileSet) {
+  if (!points.length) return;
+  const add = (lat, lon) => tileSet.add(`${z}/${lonToTileX(lon, z)}/${latToTileY(lat, z)}`);
+  add(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) {
+    const [aLat, aLon] = points[i - 1];
+    const [bLat, bLon] = points[i];
+    const distM = metersBetween(aLat, aLon, bLat, bLon);
+    const steps = Math.max(1, Math.ceil(distM / stepM));
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      add(aLat + (bLat - aLat) * t, aLon + (bLon - aLon) * t);
+    }
+  }
+}
+
+// Build the full target tile set: BART trail + every imported hike,
+// expanded by 1 tile in each direction so the buffer covers a slight
+// off-route detour. Returns a Set of "z/x/y" strings.
+function computeTileTargetSet() {
+  const set = new Set();
+  for (const z of TILE_PREFETCH_ZOOMS) {
+    const stepM = tileWidthM(z) / 4;
+    if (Array.isArray(RIDGE_STATIC)) {
+      for (const seg of RIDGE_STATIC) sampleSegmentToTiles(seg, z, stepM, set);
+    }
+    for (const h of hikes) {
+      const seg = h.coords.map(c => [c.lat, c.lon]);
+      sampleSegmentToTiles(seg, z, stepM, set);
+    }
+  }
+  // 1-tile buffer in each direction. Cheap to dilate and gives a margin
+  // for GPS drift / parallel trails / brief off-route excursions.
+  const expanded = new Set();
+  for (const key of set) {
+    const [zStr, xStr, yStr] = key.split('/');
+    const z = +zStr, x = +xStr, y = +yStr;
+    const max = (1 << z) - 1;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx > max || ny > max) continue;
+        expanded.add(`${z}/${nx}/${ny}`);
+      }
+    }
+  }
+  return expanded;
+}
+
+function setTileStatus(text) {
+  const el = document.getElementById('tile-status');
+  if (el) el.textContent = text;
+}
+function refreshTileStatus() {
+  // Show whatever's true even when not actively running, so the settings
+  // section is informative on boot before the prefetch kicks off.
+  if (tilePrefetchRunning) return;
+  const total = tileTargetCount;
+  const done = tileCachedCount;
+  const bytes = getTileBytes();
+  if (!total) {
+    setTileStatus(`${done} tiles cached · ${humanBytes(bytes)}`);
+    return;
+  }
+  if (done >= total) {
+    setTileStatus(`Up to date · ${total} tiles · ${humanBytes(bytes)}`);
+  } else if (tilePrefetchPaused) {
+    setTileStatus(`Paused · ${done} / ${total} · ${humanBytes(bytes)}`);
+  } else if (!tileEnabled()) {
+    setTileStatus(`Auto-cache off · ${done} / ${total} · ${humanBytes(bytes)}`);
+  } else {
+    const reason = tileSkipReason();
+    setTileStatus(reason
+      ? `Waiting (${reason}) · ${done} / ${total} · ${humanBytes(bytes)}`
+      : `Pending · ${done} / ${total} · ${humanBytes(bytes)}`);
+  }
+}
+
+async function tilePrefetchRun({ force = false } = {}) {
+  if (tilePrefetchRunning) return;
+  if (!('caches' in window)) {
+    setTileStatus('Cache Storage unavailable');
+    return;
+  }
+  if (!force) {
+    if (!tileEnabled()) { refreshTileStatus(); return; }
+    const skip = tileSkipReason();
+    if (skip) { refreshTileStatus(); return; }
+  }
+
+  tilePrefetchRunning = true;
+  tilePrefetchPaused = false;
+
+  try {
+    const cache = await caches.open(TILES_CACHE);
+    // Snapshot the cache once so we don't hit IndexedDB per-tile while
+    // computing the diff; ~3k entries is fast in-memory.
+    const cachedSet = new Set((await cache.keys()).map(r => r.url));
+    const targets = [...computeTileTargetSet()].map(k => {
+      const [z, x, y] = k.split('/').map(Number);
+      return tileUrl(z, x, y);
+    });
+    tileTargetCount = targets.length;
+    const missing = targets.filter(u => !cachedSet.has(u));
+    tileCachedCount = tileTargetCount - missing.length;
+
+    if (!missing.length) {
+      setTileStatus(`Up to date · ${tileTargetCount} tiles · ${humanBytes(getTileBytes())}`);
+      return;
+    }
+
+    setTileStatus(`Caching · ${tileCachedCount} / ${tileTargetCount} · ${humanBytes(getTileBytes())}`);
+
+    let bytes = getTileBytes();
+    let i = 0;
+    const next = () => (i < missing.length ? missing[i++] : null);
+
+    const worker = async () => {
+      while (true) {
+        if (tilePrefetchPaused) return;
+        const url = next();
+        if (!url) return;
+        try {
+          const res = await fetch(url, { mode: 'cors' });
+          if (res.ok) {
+            // Estimate size from Content-Length when present; CartoDB sets
+            // it. Fallback is a rough average so the byte counter still
+            // moves on responses without the header.
+            const len = Number(res.headers.get('content-length')) || 20000;
+            await cache.put(url, res.clone());
+            bytes += len;
+            tileCachedCount++;
+            // Throttle the localStorage write: every 25 tiles is enough to
+            // keep the UI honest without hammering storage.
+            if (tileCachedCount % 25 === 0) setTileBytes(bytes);
+            if (tileCachedCount % 10 === 0) {
+              setTileStatus(`Caching · ${tileCachedCount} / ${tileTargetCount} · ${humanBytes(bytes)}`);
+            }
+          }
+        } catch {
+          // Swallow per-tile failures; the next prefetch run will pick up
+          // whatever didn't land. Avoids one flaky tile aborting the batch.
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: TILE_FETCH_CONCURRENCY }, worker));
+    setTileBytes(bytes);
+  } finally {
+    tilePrefetchRunning = false;
+    refreshTileStatus();
+  }
+}
+
+function tilePrefetchSchedule() {
+  if (tilePrefetchTimer) { clearTimeout(tilePrefetchTimer); tilePrefetchTimer = null; }
+  if (!tileEnabled()) { refreshTileStatus(); return; }
+  // Defer past first paint and any in-flight sync so the prefetch doesn't
+  // compete for bandwidth with the things the user is actively waiting on.
+  tilePrefetchTimer = setTimeout(() => {
+    tilePrefetchTimer = null;
+    tilePrefetchRun();
+  }, TILE_PREFETCH_DELAY_MS);
+}
+
+// Pause/resume hooks: while the tab is hidden we don't run new fetches
+// (battery + bandwidth politeness), and we pick back up on visible.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    tilePrefetchPaused = true;
+  } else {
+    tilePrefetchPaused = false;
+    if (!tilePrefetchRunning) tilePrefetchSchedule();
+  }
+});
+window.addEventListener('online', () => { if (!tilePrefetchRunning) tilePrefetchSchedule(); });
+
+function togglePrefetchEnabled(on) {
+  setTileEnabled(on);
+  if (on) tilePrefetchSchedule();
+  else {
+    tilePrefetchPaused = true;
+    refreshTileStatus();
+  }
+}
+function tilePrefetchPauseToggle() {
+  if (tilePrefetchPaused) {
+    tilePrefetchPaused = false;
+    if (!tilePrefetchRunning) tilePrefetchRun();
+  } else {
+    tilePrefetchPaused = true;
+  }
+  updatePauseBtn();
+  refreshTileStatus();
+}
+function updatePauseBtn() {
+  const btn = document.getElementById('tile-pause-btn');
+  if (btn) btn.textContent = tilePrefetchPaused ? 'Resume' : 'Pause';
+}
+async function tilePrefetchForce() {
+  // "Force re-cache" recomputes the target set and queues anything missing,
+  // ignoring the connection guards. Useful after adding hikes or if the
+  // user knows they're about to go offline.
+  tilePrefetchPaused = false;
+  await tilePrefetchRun({ force: true });
+}
+async function tileClearCache() {
+  if (!confirm('Clear all cached map tiles? Offline coverage will be lost until the next prefetch.')) return;
+  tilePrefetchPaused = true;
+  // Wait for any in-flight fetches to settle so we don't race with cache.put.
+  while (tilePrefetchRunning) await new Promise(r => setTimeout(r, 50));
+  try {
+    await caches.delete(TILES_CACHE);
+    await caches.delete('cairn-tiles-base-v1');
+  } catch {}
+  setTileBytes(0);
+  tileTargetCount = 0;
+  tileCachedCount = 0;
+  tilePrefetchPaused = false;
+  setTileStatus('Cleared');
+  tilePrefetchSchedule();
+}
+
+// One-time persistent-storage request. Without this, iOS Safari evicts
+// Cache Storage under pressure — exactly the situation where 60 MB of trail
+// tiles would be the first thing to go. Browsers may show their own prompt;
+// silent grant or denial is fine either way.
+function requestPersistentStorage() {
+  if (localStorage.getItem(TILE_PERSIST_REQUESTED_KEY) === '1') return;
+  if (!navigator.storage?.persist) return;
+  navigator.storage.persist().catch(() => {}).finally(() => {
+    try { localStorage.setItem(TILE_PERSIST_REQUESTED_KEY, '1'); } catch {}
+  });
+}
 function clearAll(){
   if(!hikes.length) return;
   if(!confirm(`Remove all ${hikes.length} hikes?`)) return;
@@ -1142,6 +1492,9 @@ async function loadFiles(files){
   const all = hikes.flatMap(h => h.coords.map(c => [c.lat, c.lon]));
   if (all.length) map.fitBounds(all, { padding: [40, 40] });
   if (ridgeVisible && ridgeSegments) recomputeCoverage();
+  // New hikes → new tiles to prefetch; re-schedule so the Offline Tiles
+  // section picks up the larger target set without waiting for next boot.
+  tilePrefetchSchedule();
 }
 
 // ── events ────────────────────────────────────────────────────────
@@ -1211,6 +1564,9 @@ function onOpsMerged(mergedOps) {
     const all = hikes.flatMap(h => h.coords.map(c => [c.lat, c.lon]));
     if (all.length) map.fitBounds(all, { padding: [40, 40] });
   }
+  // Remote ops can introduce hikes from other devices — re-schedule the
+  // prefetch so their tiles get queued up too.
+  tilePrefetchSchedule();
 }
 
 // Device ops are the subset of `ops` authored by this device. The sync module
@@ -1258,7 +1614,17 @@ window.closeElev = closeElev;
 window.focusHike = focusHike;
 window.clearAll = clearAll;
 window.locateMe = locateMe;
+window.togglePrefetchEnabled = togglePrefetchEnabled;
+window.tilePrefetchPauseToggle = tilePrefetchPauseToggle;
+window.tilePrefetchForce = tilePrefetchForce;
+window.tileClearCache = tileClearCache;
+window.refreshTileStatus = refreshTileStatus;
+window.updateTilePauseBtn = updatePauseBtn;
+window.tilePrefetchEnabled = tileEnabled;
 renderLocateLog();
+requestPersistentStorage();
+refreshTileStatus();
+tilePrefetchSchedule();
 </script>
 
 <!-- ══ SYNC MODULE GLUE ══════════════════════════════════════════════ -->
@@ -1607,6 +1973,11 @@ renderLocateLog();
     document.getElementById('gh-repo').value = s.repo || 'personal-data';
     document.getElementById('gh-token').value = s.token || '';
     document.getElementById('gh-status-row').style.display = 'none';
+    // Sync the Offline Tiles section to whatever the prefetch state is now.
+    const tileCb = document.getElementById('tile-prefetch-checkbox');
+    if (tileCb && window.tilePrefetchEnabled) tileCb.checked = window.tilePrefetchEnabled();
+    if (window.refreshTileStatus) window.refreshTileStatus();
+    if (window.updateTilePauseBtn) window.updateTilePauseBtn();
     document.getElementById('modal-settings').classList.add('open');
   };
   window.closeSettings = () => {
