@@ -1519,7 +1519,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v25';
+const APP_VERSION = 'marginalia-v26';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -2474,11 +2474,17 @@ function populateLocationSuggestions() {
   const container = document.getElementById('location-suggestions');
   if (!currentBookId) { container.innerHTML = ''; return; }
   db = loadData();
-  const locations = [...new Set(
-    db.entries
-      .filter(e => e.bookId === currentBookId && e.type === 'quote' && e.location)
-      .map(e => e.location)
-  )];
+  const seen = new Set();
+  const locations = [];
+  db.entries
+    .filter(e => e.bookId === currentBookId && e.type === 'quote' && e.location)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    .forEach(e => {
+      if (!seen.has(e.location)) {
+        seen.add(e.location);
+        locations.push(e.location);
+      }
+    });
   if (!locations.length) { container.innerHTML = ''; return; }
   container.innerHTML = `<div class="location-suggestions-list">
     <div class="location-suggestions-label">Previous locations</div>
