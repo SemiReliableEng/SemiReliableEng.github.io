@@ -1385,6 +1385,15 @@
       </div>
 
       <div class="settings-section">
+        <div class="settings-section-title">Storage</div>
+        <div class="settings-card">
+          <div class="settings-hint">Ask the browser to mark this site's storage as persistent. Without this, browsers can evict your local data (token, op-log cache) under storage pressure or low engagement. The version line below shows the current state. Click here from inside the installed PWA — Chrome's auto-grant heuristic looks for a user gesture.</div>
+          <button class="btn-secondary" onclick="requestPersistent()" id="btn-request-persistent">Request persistent storage</button>
+          <div class="settings-hint" id="persist-status" style="margin-top:8px;display:none"></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-title">Danger Zone</div>
         <div class="settings-card">
           <div class="settings-hint">Disconnect GitHub sync. Your local data is not affected.</div>
@@ -1519,7 +1528,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v27';
+const APP_VERSION = 'marginalia-v28';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -2612,7 +2621,65 @@ function updateSettingsFields() {
   if (gk) gk.value = loadGeminiKey() || '';
   const forgetBtn = document.getElementById('btn-forget-gemini');
   if (forgetBtn) forgetBtn.style.display = loadGeminiKey() ? '' : 'none';
+  refreshPersistButton();
 }
+
+// Reflect the bucket's persisted-storage state on the Storage button. The
+// passive boot-time `navigator.storage.persist()` call (in the SW-registration
+// block) is sometimes denied because Chrome's auto-grant heuristic prefers a
+// call made inside a user gesture; this button is the user-gesture path, and
+// the function below keeps it disabled with a "Persistent ✓" label whenever
+// `persisted()` already says we're good.
+async function refreshPersistButton() {
+  const btn = document.getElementById('btn-request-persistent');
+  const status = document.getElementById('persist-status');
+  if (!btn || !status) return;
+  status.style.display = 'none';
+  status.textContent = '';
+  if (!navigator.storage?.persist) {
+    btn.disabled = true;
+    btn.textContent = 'Not supported';
+    status.textContent = 'This browser does not expose the Storage API.';
+    status.style.display = 'block';
+    return;
+  }
+  try {
+    if (await navigator.storage.persisted()) {
+      btn.disabled = true;
+      btn.textContent = 'Persistent ✓';
+      status.textContent = 'Local data is protected from browser eviction.';
+      status.style.display = 'block';
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Request persistent storage';
+    }
+  } catch {}
+}
+
+window.requestPersistent = async () => {
+  const btn = document.getElementById('btn-request-persistent');
+  const status = document.getElementById('persist-status');
+  if (!btn || !status || !navigator.storage?.persist) return;
+  btn.disabled = true;
+  btn.textContent = 'Requesting…';
+  status.style.display = 'none';
+  try {
+    const granted = await navigator.storage.persist();
+    if (granted) {
+      btn.textContent = 'Persistent ✓';
+      status.textContent = '✓ Granted. Reload to update the version line.';
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Request persistent storage';
+      status.textContent = '✗ Denied. Try bookmarking the page in regular Chrome (not the PWA window) or granting notification permission, then try again.';
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Request persistent storage';
+    status.textContent = `✗ Error: ${e.message}`;
+  }
+  status.style.display = 'block';
+};
 
 // ── Gemini OCR ──
 const GEMINI_SETTINGS_KEY = 'marginalia_gemini_key';

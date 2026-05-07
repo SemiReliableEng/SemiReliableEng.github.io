@@ -460,6 +460,15 @@
       </div>
 
       <div class="settings-section">
+        <div class="settings-section-title">Storage</div>
+        <div class="settings-card">
+          <div class="settings-hint">Ask the browser to mark this site's storage as persistent. Without this, browsers can evict your local data (token, op-log cache, hikes) under storage pressure or low engagement. The version line below shows the current state. Click here from inside the installed PWA — Chrome's auto-grant heuristic looks for a user gesture.</div>
+          <button class="btn-secondary" onclick="requestPersistent()" id="btn-request-persistent">Request persistent storage</button>
+          <div class="settings-hint" id="persist-status" style="margin-top:8px;display:none"></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-title">Danger Zone</div>
         <div class="settings-card">
           <div class="settings-hint">Remove every hike on this device. If GitHub sync is connected, the deletions propagate to your other devices on the next push.</div>
@@ -491,7 +500,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v16';
+const APP_VERSION = 'cairn-v17';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -1993,7 +2002,65 @@ tilePrefetchSchedule();
     if (tileCb && window.tilePrefetchEnabled) tileCb.checked = window.tilePrefetchEnabled();
     if (window.refreshTileStatus) window.refreshTileStatus();
     if (window.updateTilePauseBtn) window.updateTilePauseBtn();
+    refreshPersistButton();
     document.getElementById('modal-settings').classList.add('open');
+  };
+
+  // Reflect the bucket's persisted-storage state on the Storage button. The
+  // passive boot-time `requestPersistentStorage()` call is sometimes denied
+  // because Chrome's auto-grant heuristic prefers a call made inside a user
+  // gesture; the button is the user-gesture path, and this function keeps it
+  // disabled with a "Persistent ✓" label whenever `persisted()` already says
+  // we're good.
+  async function refreshPersistButton() {
+    const btn = document.getElementById('btn-request-persistent');
+    const status = document.getElementById('persist-status');
+    if (!btn || !status) return;
+    status.style.display = 'none';
+    status.textContent = '';
+    if (!navigator.storage?.persist) {
+      btn.disabled = true;
+      btn.textContent = 'Not supported';
+      status.textContent = 'This browser does not expose the Storage API.';
+      status.style.display = 'block';
+      return;
+    }
+    try {
+      if (await navigator.storage.persisted()) {
+        btn.disabled = true;
+        btn.textContent = 'Persistent ✓';
+        status.textContent = 'Local data is protected from browser eviction.';
+        status.style.display = 'block';
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'Request persistent storage';
+      }
+    } catch {}
+  }
+
+  window.requestPersistent = async () => {
+    const btn = document.getElementById('btn-request-persistent');
+    const status = document.getElementById('persist-status');
+    if (!btn || !status || !navigator.storage?.persist) return;
+    btn.disabled = true;
+    btn.textContent = 'Requesting…';
+    status.style.display = 'none';
+    try {
+      const granted = await navigator.storage.persist();
+      if (granted) {
+        btn.textContent = 'Persistent ✓';
+        status.textContent = '✓ Granted. Reload to update the version line.';
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'Request persistent storage';
+        status.textContent = '✗ Denied. Try bookmarking the page in regular Chrome (not the PWA window) or granting notification permission, then try again.';
+      }
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = 'Request persistent storage';
+      status.textContent = `✗ Error: ${e.message}`;
+    }
+    status.style.display = 'block';
   };
   window.closeSettings = () => {
     document.getElementById('modal-settings').classList.remove('open');
