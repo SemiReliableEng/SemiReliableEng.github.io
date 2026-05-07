@@ -8,10 +8,19 @@ const ASSETS = [
   'https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap'
 ];
 
-// Install: cache core assets
+// Install: cache core assets. Each asset is fetched with cache:'reload' so
+// install bypasses the browser's HTTP cache (and any stale CDN edge). Without
+// this, a SW that installs in the small window between a Pages deploy
+// publishing sw.js and the same deploy propagating index.html through the
+// CDN can pre-cache the *old* index.html under the new CACHE name — every
+// subsequent normal reload then serves stale HTML even though the version
+// line shows the new SW. The hard-reload-shows-vN-but-normal-reload-shows-
+// v(N-1) symptom is exactly this race.
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      .then(cache => cache.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' }))))
+      .then(() => self.skipWaiting())
   );
 });
 

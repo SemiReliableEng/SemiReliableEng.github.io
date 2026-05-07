@@ -91,10 +91,22 @@ const BASE_TILES = (() => {
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
     // App shell is atomic — any failure aborts the install (correct, we want
-    // a known-good shell). Base tiles are best-effort: a missing tile here
-    // is recoverable later via runtime fetch + the page's prefetch loop, so
-    // a single 404/network blip shouldn't fail the whole SW install.
-    const shell = caches.open(CACHE).then((c) => c.addAll(APP_SHELL));
+    // a known-good shell). Each asset is fetched with cache:'reload' so
+    // install bypasses the browser's HTTP cache (and any stale CDN edge).
+    // Without this, a SW that installs in the small window between a Pages
+    // deploy publishing sw.js and the same deploy propagating index.html
+    // through the CDN can pre-cache the *old* index.html under the new
+    // CACHE name — every subsequent normal reload then serves stale HTML
+    // even though the version line shows the new SW. The hard-reload-
+    // shows-vN-but-normal-reload-shows-v(N-1) symptom is exactly this race.
+    //
+    // Base tiles are best-effort: a missing tile is recoverable later via
+    // runtime fetch + the page's prefetch loop, so a single 404/network
+    // blip shouldn't fail the whole SW install. They're CDN-stable, not
+    // subject to the Pages-deploy race, so they don't need cache:'reload'.
+    const shell = caches.open(CACHE).then((c) =>
+      c.addAll(APP_SHELL.map((u) => new Request(u, { cache: 'reload' })))
+    );
     const base = caches.open(BASE_TILES_CACHE).then(async (c) => {
       const existing = new Set((await c.keys()).map((r) => r.url));
       await Promise.allSettled(
