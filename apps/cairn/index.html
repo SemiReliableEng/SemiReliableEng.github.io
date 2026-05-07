@@ -491,7 +491,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v15';
+const APP_VERSION = 'cairn-v16';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -1111,7 +1111,6 @@ function locateMe() {
 //   cairn-tiles-v1       — z10-15 trail buffer + any runtime tile fetches
 const TILES_CACHE = 'cairn-tiles-v1';
 const TILE_PREFETCH_ENABLED_KEY = 'cairn_tile_prefetch_enabled';
-const TILE_PERSIST_REQUESTED_KEY = 'cairn_tile_persist_requested';
 const TILE_BYTES_KEY = 'cairn_tile_bytes_cached';
 // z10 covers context, z15 is "see which fork to take" detail. Each step up
 // roughly quadruples tile count; z16 would push the total past 250 MB.
@@ -1419,16 +1418,19 @@ async function tileClearCache() {
   tilePrefetchSchedule();
 }
 
-// One-time persistent-storage request. Without this, iOS Safari evicts
-// Cache Storage under pressure — exactly the situation where 60 MB of trail
-// tiles would be the first thing to go. Browsers may show their own prompt;
-// silent grant or denial is fine either way.
-function requestPersistentStorage() {
-  if (localStorage.getItem(TILE_PERSIST_REQUESTED_KEY) === '1') return;
+// Ask the browser to upgrade us from "best-effort" to "persistent" storage.
+// Without this, Chrome (incl. ChromeOS) and iOS Safari can evict our bucket
+// — localStorage, Cache Storage, IndexedDB — under pressure or low engagement.
+// Both grant criteria depend on engagement signals (PWA install, bookmark,
+// usage), which can change after first boot, so we re-ask on every load
+// until `persisted()` says we're already persistent. No flag — the API is
+// the source of truth, and a granted bucket short-circuits cheaply.
+async function requestPersistentStorage() {
   if (!navigator.storage?.persist) return;
-  navigator.storage.persist().catch(() => {}).finally(() => {
-    try { localStorage.setItem(TILE_PERSIST_REQUESTED_KEY, '1'); } catch {}
-  });
+  try {
+    if (await navigator.storage.persisted()) return;
+    await navigator.storage.persist();
+  } catch {}
 }
 function clearAll(){
   if(!hikes.length) return;
@@ -2095,24 +2097,39 @@ tilePrefetchSchedule();
   });
 
   // ── Version line (settings footer) ──────────────────────────────
-  // Show the HTML's declared version, then append the active SW's CACHE if
-  // it reports back. A mismatch means the SW is stale and the next refresh
-  // will still serve old HTML out of its cache.
+  // Composed from three async-resolved bits: APP_VERSION (sync), the active
+  // SW's CACHE (postMessage), and the bucket's persisted-storage state
+  // (`navigator.storage.persisted()`). Each part renders as soon as it
+  // resolves; we re-render the full line after each so partial answers stay
+  // truthful. A SW-CACHE mismatch is the stale-SW tell; "best-effort" warns
+  // the user that the browser may evict the bucket under pressure (which is
+  // how data has been disappearing across browser restarts on ChromeOS).
   (function renderVersionLine() {
     const el = document.getElementById('app-version-line');
     if (!el) return;
-    el.textContent = `Version ${state.APP_VERSION}`;
+    let swCache = null;
+    let persisted = null;
+    function render() {
+      const parts = [`Version ${state.APP_VERSION}`];
+      if (swCache && swCache !== state.APP_VERSION) parts.push(`SW: ${swCache}`);
+      if (persisted === true) parts.push('persistent');
+      else if (persisted === false) parts.push('best-effort');
+      el.textContent = parts.join(' · ');
+    }
+    render();
+    if (navigator.storage?.persisted) {
+      navigator.storage.persisted().then((p) => { persisted = !!p; render(); }).catch(() => {});
+    }
     if (!navigator.serviceWorker) return;
     navigator.serviceWorker.ready.then((reg) => {
       const target = reg.active || navigator.serviceWorker.controller;
       if (!target) return;
       const chan = new MessageChannel();
       chan.port1.onmessage = (ev) => {
-        const swCache = ev.data && ev.data.cache;
-        if (!swCache) return;
-        el.textContent = swCache === state.APP_VERSION
-          ? `Version ${state.APP_VERSION}`
-          : `Version ${state.APP_VERSION} · SW: ${swCache}`;
+        const c = ev.data && ev.data.cache;
+        if (!c) return;
+        swCache = c;
+        render();
       };
       try { target.postMessage({ type: 'get-cache-version' }, [chan.port2]); } catch {}
     }).catch(() => {});

@@ -1519,7 +1519,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v26';
+const APP_VERSION = 'marginalia-v27';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -2908,25 +2908,57 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// ── Persistent-storage request ───────────────────
+// Ask the browser to upgrade us from "best-effort" to "persistent" storage.
+// Without this, Chrome (incl. ChromeOS) and iOS Safari can evict our bucket
+// — localStorage, Cache Storage, IndexedDB — under pressure or low engagement,
+// silently wiping the GitHub token and the local op-log cache. Grant criteria
+// (PWA install, bookmark, usage signals) can change after first boot, so we
+// re-ask on every load, gated by `persisted()` so an already-granted bucket
+// short-circuits cheaply.
+(async function requestPersistentStorage() {
+  if (!navigator.storage?.persist) return;
+  try {
+    if (await navigator.storage.persisted()) return;
+    await navigator.storage.persist();
+  } catch {}
+})();
+
 // ── Version line in settings ──────────────────────
-// Show the HTML's declared version, then append the active SW's CACHE if it
-// reports back — a mismatch means the SW is stale and the next refresh will
-// still serve old HTML out of its cache.
+// Composed from three async-resolved bits: APP_VERSION (sync), the active
+// SW's CACHE (postMessage), and the bucket's persisted-storage state
+// (`navigator.storage.persisted()`). Each part renders as soon as it
+// resolves; we re-render the full line after each so partial answers stay
+// truthful. A SW-CACHE mismatch is the stale-SW tell; "best-effort" warns
+// the user that the browser may evict the bucket under pressure (which is
+// how token + local data have been disappearing across browser restarts on
+// ChromeOS).
 (function renderVersionLine() {
   const el = document.getElementById('app-version-line');
   if (!el) return;
-  el.textContent = `Version ${APP_VERSION}`;
+  let swCache = null;
+  let persisted = null;
+  function render() {
+    const parts = [`Version ${APP_VERSION}`];
+    if (swCache && swCache !== APP_VERSION) parts.push(`SW: ${swCache}`);
+    if (persisted === true) parts.push('persistent');
+    else if (persisted === false) parts.push('best-effort');
+    el.textContent = parts.join(' · ');
+  }
+  render();
+  if (navigator.storage?.persisted) {
+    navigator.storage.persisted().then((p) => { persisted = !!p; render(); }).catch(() => {});
+  }
   if (!navigator.serviceWorker) return;
   navigator.serviceWorker.ready.then((reg) => {
     const target = reg.active || navigator.serviceWorker.controller;
     if (!target) return;
     const chan = new MessageChannel();
     chan.port1.onmessage = (ev) => {
-      const swCache = ev.data && ev.data.cache;
-      if (!swCache) return;
-      el.textContent = swCache === APP_VERSION
-        ? `Version ${APP_VERSION}`
-        : `Version ${APP_VERSION} · SW: ${swCache}`;
+      const c = ev.data && ev.data.cache;
+      if (!c) return;
+      swCache = c;
+      render();
     };
     try { target.postMessage({ type: 'get-cache-version' }, [chan.port2]); } catch {}
   }).catch(() => {});
