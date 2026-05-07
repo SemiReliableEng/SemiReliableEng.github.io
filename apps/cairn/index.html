@@ -500,7 +500,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v17';
+const APP_VERSION = 'cairn-v18';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -2106,7 +2106,40 @@ tilePrefetchSchedule();
     await sync.pushNow();
   };
 
-  window.syncNow = async () => { await sync.syncNow(); await maybeCompact(); };
+  // Manual Sync Now: also fire a notification (with an OK action) when it
+  // settles. Fired only on the manual path — not on visibility-change auto
+  // pulls — so the user isn't pinged in the background. Beyond the obvious
+  // "you can close the tab now" signal, the OK click is the user gesture
+  // Chrome's site-engagement counter cares about, which is the heuristic
+  // behind auto-granting `navigator.storage.persist()`. So a few rounds of
+  // sync+ack is also the practical path off "best-effort" on this origin.
+  async function notifySync(success, body) {
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'granted') return;
+    if (!('serviceWorker' in navigator)) return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification(success ? 'Cairn · sync complete' : 'Cairn · sync failed', {
+        body: body || '',
+        tag: 'cairn-sync',
+        icon: './icon-192.png',
+        badge: './icon-192.png',
+        actions: [{ action: 'ok', title: 'OK' }],
+        requireInteraction: false,
+      });
+    } catch {}
+  }
+  window.syncNow = async () => {
+    try {
+      await sync.syncNow();
+      await maybeCompact();
+      const s = getSettings();
+      notifySync(true, s ? `${s.username}/${s.repo}` : '');
+    } catch (e) {
+      notifySync(false, e?.message || 'see sync log');
+      throw e;
+    }
+  };
   window.syncPullOnly = async () => { await sync.pull(); };
 
   window.disconnectGitHub = () => {

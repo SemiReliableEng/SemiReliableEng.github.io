@@ -11,7 +11,7 @@
 //   TILES_CACHE       — runtime + trail-prefetched tiles. Survives shell bumps
 //                       so the page-side prefetch (z10-15 along Ridge Trail +
 //                       imported hikes) doesn't get wiped on every UI release.
-const CACHE = 'cairn-v17';
+const CACHE = 'cairn-v18';
 const BASE_TILES_CACHE = 'cairn-tiles-base-v1';
 const TILES_CACHE = 'cairn-tiles-v1';
 
@@ -139,6 +139,22 @@ self.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'get-cache-version' && e.ports && e.ports[0]) {
     e.ports[0].postMessage({ cache: CACHE });
   }
+});
+
+// Sync-complete notifications fire from the page after the manual Sync Now
+// path settles. Clicking the body or the OK action focuses an existing app
+// window (or opens one). The click also pumps Chrome's site-engagement
+// counter, which is the heuristic that gates auto-grant of
+// `navigator.storage.persist()` — see index.html's notifySync().
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of clients) {
+      if ('focus' in c) return c.focus();
+    }
+    if (self.clients.openWindow) return self.clients.openWindow('./');
+  })());
 });
 
 self.addEventListener('fetch', (e) => {

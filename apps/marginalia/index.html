@@ -1528,7 +1528,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v28';
+const APP_VERSION = 'marginalia-v29';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -3416,7 +3416,40 @@ window.forceUpdate = async () => {
   }
 };
 
-window.syncNow = async () => { await sync.syncNow(); await maybeCompact(); };
+// Manual Sync Now: also fire a notification (with an OK action) when it
+// settles. Fired only on the manual path — not on visibility-change auto
+// pulls — so the user isn't pinged in the background. Beyond the obvious
+// "you can close the tab now" signal, the OK click is the user gesture
+// Chrome's site-engagement counter cares about, which is the heuristic
+// behind auto-granting `navigator.storage.persist()`. So a few rounds of
+// sync+ack is also the practical path off "best-effort" on this origin.
+async function notifySync(success, body) {
+  if (typeof Notification === 'undefined') return;
+  if (Notification.permission !== 'granted') return;
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification(success ? 'Marginalia · sync complete' : 'Marginalia · sync failed', {
+      body: body || '',
+      tag: 'marginalia-sync',
+      icon: '/apps/marginalia/icon-192.png',
+      badge: '/apps/marginalia/icon-192.png',
+      actions: [{ action: 'ok', title: 'OK' }],
+      requireInteraction: false,
+    });
+  } catch {}
+}
+window.syncNow = async () => {
+  try {
+    await sync.syncNow();
+    await maybeCompact();
+    const s = loadGHSettings();
+    notifySync(true, s.username && s.repo ? `${s.username}/${s.repo}` : '');
+  } catch (e) {
+    notifySync(false, e?.message || 'see sync log');
+    throw e;
+  }
+};
 window.syncPull = async () => { await sync.pull(); };
 
 // Seed our local snapshot to remote when the remote lacks one. Needed after
