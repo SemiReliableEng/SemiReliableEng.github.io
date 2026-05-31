@@ -11,7 +11,7 @@
 <link rel="manifest" href="/apps/marginalia/manifest.json">
 <link rel="icon" href="/apps/marginalia/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
@@ -1528,7 +1528,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v29';
+const APP_VERSION = 'marginalia-v30';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -2799,9 +2799,23 @@ function downscaleImage(file, maxPx) {
   });
 }
 
+// Tesseract asset URLs. These MUST match the URLs in sw.js so the service
+// worker serves them from cache when offline — Tesseract spawns a worker that
+// independently fetches worker.min.js, the WASM core, and the language data,
+// so all three (plus the .wasm sibling that the core JS loads) need to be
+// pre-cached for the very first OCR call on a device to work offline. Pin
+// versions: a floating @5 tag would break this contract on a CDN rev.
+const TESSERACT_WORKER = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js';
+const TESSERACT_CORE   = 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core-simd-lstm.wasm.js';
+const TESSERACT_LANG   = 'https://tessdata.projectnaptha.com/4.0.0';
+
 async function ocrWithTesseract(file) {
   const canvas = await downscaleImage(file, 1500);
-  const { data } = await Tesseract.recognize(canvas, 'eng');
+  const { data } = await Tesseract.recognize(canvas, 'eng', {
+    workerPath: TESSERACT_WORKER,
+    corePath: TESSERACT_CORE,
+    langPath: TESSERACT_LANG,
+  });
   return data.text?.trim();
 }
 
@@ -2842,15 +2856,37 @@ function cleanOCRText(raw) {
     .trim();
 }
 
+// A failed `fetch()` throws a TypeError in every browser (DOM spec), so that
+// — together with navigator.onLine === false — is how we distinguish "can't
+// reach Gemini at all" (fall back to Tesseract) from "Gemini answered with a
+// 4xx/5xx" (real config/quota/RECITATION error, surface it). Silently
+// downgrading on the latter would hide a bad API key behind worse OCR output.
+function isOfflineError(err) {
+  return err instanceof TypeError || navigator.onLine === false;
+}
+
 async function processOCR(file) {
   const btn = activeOCRBtn || document.getElementById('btn-ocr-camera');
   const origHTML = btn.innerHTML;
   btn.disabled = true;
   const engine = loadOCREngine();
-  btn.innerHTML = `<span class="spin">⟳</span> ${engine === 'gemini' ? 'Scanning…' : 'Reading text…'}`;
+  const setLabel = (txt) => { btn.innerHTML = `<span class="spin">⟳</span> ${txt}`; };
+  setLabel(engine === 'gemini' ? 'Scanning…' : 'Reading text…');
 
   try {
-    const raw = engine === 'gemini' ? await ocrWithGemini(file) : await ocrWithTesseract(file);
+    let raw;
+    if (engine === 'gemini') {
+      try {
+        raw = await ocrWithGemini(file);
+      } catch (err) {
+        if (!isOfflineError(err)) throw err;
+        showToast('Gemini unreachable — falling back to Tesseract');
+        setLabel('Reading text…');
+        raw = await ocrWithTesseract(file);
+      }
+    } else {
+      raw = await ocrWithTesseract(file);
+    }
     const text = raw ? cleanOCRText(raw) : '';
     if (text) {
       document.getElementById('entry-text').value = text;

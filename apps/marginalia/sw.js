@@ -1,14 +1,32 @@
 // Marginalia Service Worker
-const CACHE = 'marginalia-v29';
-const ASSETS = [
+const CACHE = 'marginalia-v30';
+
+// First-party app shell. Fetched with cache:'reload' on install (see below).
+const APP_SHELL = [
   '/apps/marginalia/',
   '/apps/marginalia/index.html',
   '/apps/marginalia/manifest.json',
   '/apps/marginalia/shared/personal-sync.mjs',
-  'https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap'
 ];
 
-// Install: cache core assets. Each asset is fetched with cache:'reload' so
+// Pinned third-party assets. Versions pinned in URLs (and mirrored in
+// index.html), so the URL → bytes mapping is immutable; the browser's HTTP
+// cache can be reused across SW upgrades. Tesseract URLs MUST stay in sync
+// with the constants in index.html — Tesseract.recognize is configured to
+// fetch from these exact paths so SW cache hits cover the worker + WASM core
+// + language data the very first time OCR runs on a device (which is the
+// offline-in-flight case that motivated pre-caching). ~15MB total install
+// download; trades device storage for guaranteed offline OCR.
+const VENDORED = [
+  'https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap',
+  'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
+  'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
+  'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core-simd-lstm.wasm.js',
+  'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core-simd-lstm.wasm',
+  'https://tessdata.projectnaptha.com/4.0.0/eng.traineddata.gz',
+];
+
+// Install: cache core assets. APP_SHELL is fetched with cache:'reload' so
 // install bypasses the browser's HTTP cache (and any stale CDN edge). Without
 // this, a SW that installs in the small window between a Pages deploy
 // publishing sw.js and the same deploy propagating index.html through the
@@ -16,12 +34,17 @@ const ASSETS = [
 // subsequent normal reload then serves stale HTML even though the version
 // line shows the new SW. The hard-reload-shows-vN-but-normal-reload-shows-
 // v(N-1) symptom is exactly this race.
+//
+// VENDORED uses default cache policy: the URLs are version-pinned and
+// immutable, so HTTP-cache reuse across SW upgrades avoids re-downloading
+// ~15MB of Tesseract assets every time CACHE bumps.
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE)
-      .then(cache => cache.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' }))))
-      .then(() => self.skipWaiting())
-  );
+  e.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await cache.addAll(APP_SHELL.map(u => new Request(u, { cache: 'reload' })));
+    await cache.addAll(VENDORED);
+    await self.skipWaiting();
+  })());
 });
 
 // Message: answer version queries from the page so the settings panel can
@@ -72,7 +95,15 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Cache-first for fonts and static assets
+  // Cache-first for fonts and static assets. On offline fetch failure: only
+  // fall back to index.html for top-level navigations (deep-link to the
+  // installed PWA still opens the app shell). For sub-resources — scripts,
+  // WASM, data, images — return a real 503 instead. The previous
+  // catch-all-falls-back-to-HTML behavior masked offline failures by serving
+  // the HTML body for any uncached request, so Tesseract's worker.min.js
+  // fetch (uncached on a device that had never run OCR online) would receive
+  // the index.html and die with a JS-parse error instead of a clean network
+  // failure that callers could surface meaningfully.
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
@@ -82,7 +113,12 @@ self.addEventListener('fetch', e => {
           caches.open(CACHE).then(cache => cache.put(e.request, clone));
         }
         return res;
-      }).catch(() => caches.match('/apps/marginalia/index.html'));
+      }).catch(() => {
+        if (e.request.mode === 'navigate') {
+          return caches.match('/apps/marginalia/index.html');
+        }
+        return new Response('', { status: 503, statusText: 'Offline' });
+      });
     })
   );
 });
