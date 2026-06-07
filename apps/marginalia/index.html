@@ -1474,9 +1474,13 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
             Scan from photo
           </button>
-          <button class="btn-ocr" id="btn-record" onclick="toggleRecording()">
+          <button class="btn-ocr" id="btn-record" onclick="toggleRecording('mic')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
             Record
+          </button>
+          <button class="btn-ocr" id="btn-record-system" onclick="toggleRecording('system')" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+            System audio
           </button>
           <input type="file" id="ocr-camera" accept="image/*" capture="environment" style="display:none">
           <input type="file" id="ocr-file" accept="image/*" style="display:none">
@@ -1575,7 +1579,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v35';
+const APP_VERSION = 'marginalia-v36';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -3643,28 +3647,75 @@ async function getWhisper(onProgress) {
 
 let mediaRecorder = null, recChunks = [], recStream = null, recTimerId = null, recStart = 0;
 
-// One button toggles record/stop; a second 'Stop' button in the bar maps here too.
-window.toggleRecording = async () => {
+// System-audio capture (getDisplayMedia) only works on desktop/ChromeOS —
+// Android Chrome can't capture screen/tab audio at all — so the "System audio"
+// button is shown only where it can actually work (see init at the bottom).
+function systemAudioSupported() {
+  return typeof navigator.mediaDevices?.getDisplayMedia === 'function'
+    && !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
+// One call toggles record/stop. The mic / system-audio buttons pass a source;
+// the in-bar 'Stop' button passes nothing (always stops the active recording).
+window.toggleRecording = async (source) => {
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     stopRecording();
   } else {
-    await startRecording();
+    await startRecording(source || 'mic');
   }
 };
 
-async function startRecording() {
+// Acquire an audio-only MediaStream from the mic or from system/tab audio.
+// getDisplayMedia won't return audio-only — it requires a video request — so
+// for 'system' we ask for video too, then immediately drop the video track and
+// keep just the audio. Returns null (after toasting) if it can't get audio.
+async function acquireAudioStream(source) {
+  if (source === 'system') {
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      showToast('System audio capture not supported here');
+      return null;
+    }
+    let display;
+    try {
+      // systemAudio:'include' nudges Chrome to offer the system-audio option.
+      display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, systemAudio: 'include' });
+    } catch {
+      showToast('Screen share cancelled');
+      return null;
+    }
+    display.getVideoTracks().forEach(t => t.stop()); // we only want the audio
+    const audio = display.getAudioTracks();
+    if (!audio.length) {
+      display.getTracks().forEach(t => t.stop());
+      showToast('No audio shared — re-share and tick “Share tab/system audio”');
+      return null;
+    }
+    return new MediaStream(audio);
+  }
+  // mic
   if (!navigator.mediaDevices?.getUserMedia) {
     showToast('Recording not supported on this device');
-    return;
+    return null;
   }
   try {
-    recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    return await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch {
     showToast('Microphone access denied');
-    return;
+    return null;
   }
+}
+
+async function startRecording(source) {
+  const stream = await acquireAudioStream(source);
+  if (!stream) return;
+  recStream = stream;
+  // If the user ends the share from the browser's native "Stop sharing" UI
+  // (system audio) or the track otherwise ends, finalize the recording.
+  stream.getAudioTracks().forEach(t => t.addEventListener('ended', () => {
+    if (mediaRecorder && mediaRecorder.state === 'recording') stopRecording();
+  }));
   recChunks = [];
-  mediaRecorder = new MediaRecorder(recStream);
+  mediaRecorder = new MediaRecorder(stream);
   mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
   mediaRecorder.onstop = onRecordingStop;
   mediaRecorder.start();
@@ -3828,6 +3879,13 @@ function appendToEntryText(text) {
   const existing = ta.value.trim();
   ta.value = existing ? `${existing} ${text}` : text;
   ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+// Reveal the "System audio" capture button only where getDisplayMedia audio
+// actually works (desktop/ChromeOS); it stays hidden on mobile.
+if (systemAudioSupported()) {
+  const sysBtn = document.getElementById('btn-record-system');
+  if (sysBtn) sysBtn.style.display = '';
 }
 </script>
 

@@ -1,5 +1,5 @@
 // Marginalia Service Worker
-const CACHE = 'marginalia-v35';
+const CACHE = 'marginalia-v36';
 
 // First-party app shell. Fetched with cache:'reload' on install (see below).
 const APP_SHELL = [
