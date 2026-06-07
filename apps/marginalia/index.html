@@ -1409,7 +1409,7 @@
         <div class="settings-section-title">Audio Transcription</div>
         <div class="settings-card">
           <div class="settings-hint">
-            Record a quote with your microphone and have it transcribed. Whisper runs locally in your browser (no account needed; downloads a ~40&nbsp;MB model on first use, then works offline). Gemini gives better accuracy but requires the API key above. Falls back to Whisper if Gemini can't be reached.
+            Record a quote with your microphone and have it transcribed. Whisper runs locally in your browser (no account needed; downloads a ~75&nbsp;MB model on first use, then works offline). Gemini gives better accuracy but requires the API key above. Falls back to Whisper if Gemini can't be reached.
           </div>
           <div class="field-group">
             <div class="field-label">Transcription Engine</div>
@@ -1575,7 +1575,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v34';
+const APP_VERSION = 'marginalia-v35';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -3634,7 +3634,7 @@ async function getWhisper(onProgress) {
   if (!_whisper) {
     const t = await loadTransformers();
     // Force the WASM backend: WebGPU auto-probing is unreliable on mobile GPUs
-    // and whisper-tiny is small enough that WASM is fine. (Node tests use the
+    // and whisper-base is small enough that WASM is fine. (Node tests use the
     // default backend; this override only applies in the browser.)
     _whisper = await createTranscriber(t.pipeline, { progress_callback: onProgress, device: 'wasm' });
   }

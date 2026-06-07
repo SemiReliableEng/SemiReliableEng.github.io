@@ -13,11 +13,12 @@
 // transcription call, text cleanup, and WAV encoding for the Gemini path) is
 // pure and testable.
 
-// Quantized whisper-tiny.en: ~40 MB of ONNX weights, English-only, runs in
-// WASM on a phone. Chosen over base.en (~145 MB) to keep the offline download
-// closer to the Tesseract footprint. If accuracy proves too low, bumping this
-// to 'Xenova/whisper-base.en' is the one-line lever.
-export const WHISPER_MODEL = 'Xenova/whisper-tiny.en';
+// Quantized whisper-base.en (q8), English-only, runs in WASM on a phone.
+// Bumped up from tiny.en (2026-06-07): tiny's transcription quality was too
+// poor in real use. base.en is a larger download but markedly more accurate;
+// small.en ('Xenova/whisper-small.en') is the next lever if base still isn't
+// enough, at a much heavier download.
+export const WHISPER_MODEL = 'Xenova/whisper-base.en';
 
 // Whisper's fixed input rate. The browser must resample the recording to this
 // before calling transcribeSamples; the model assumes a Float32Array is
