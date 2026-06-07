@@ -1,5 +1,5 @@
 // Marginalia Service Worker
-const CACHE = 'marginalia-v31';
+const CACHE = 'marginalia-v32';
 
 // First-party app shell. Fetched with cache:'reload' on install (see below).
 const APP_SHELL = [
@@ -119,7 +119,10 @@ self.addEventListener('fetch', e => {
     caches.match(e.request).then(cached => {
       if (cached) return cached;
       return fetch(e.request).then(res => {
-        if (res.ok) {
+        // Only GETs are cacheable — Cache.put() throws on POST (e.g. the
+        // Gemini API calls), and that rejection surfaces as a noisy
+        // "uncaught (in promise)" even though the response itself is fine.
+        if (res.ok && e.request.method === 'GET') {
           const clone = res.clone();
           caches.open(CACHE).then(cache => cache.put(e.request, clone));
         }

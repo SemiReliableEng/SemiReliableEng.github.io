@@ -1575,7 +1575,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v31';
+const APP_VERSION = 'marginalia-v32';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -3759,7 +3759,10 @@ async function transcribeBlob(blob) {
       showToast('No speech detected');
     }
   } catch (err) {
-    showToast('Transcription failed: ' + (err.message || err));
+    // Log the full error/stack — the toast auto-dismisses and a phone has no
+    // easy console scrollback, so this is the durable diagnostic surface.
+    console.error('[marginalia transcribe] failed:', err);
+    showToast('Transcription failed: ' + (err && err.message || err));
   } finally {
     setRecMode('idle');
   }
