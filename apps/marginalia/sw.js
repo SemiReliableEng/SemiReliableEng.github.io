@@ -1,5 +1,5 @@
 // Marginalia Service Worker
-const CACHE = 'marginalia-v32';
+const CACHE = 'marginalia-v33';
 
 // First-party app shell. Fetched with cache:'reload' on install (see below).
 const APP_SHELL = [
@@ -25,16 +25,16 @@ const VENDORED = [
   'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core-simd-lstm.wasm.js',
   'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core-simd-lstm.wasm',
   'https://tessdata.projectnaptha.com/4.0.0/eng.traineddata.gz',
-  // Audio transcription library (the browser ESM build). Pinned to match
-  // TRANSFORMERS_URL in index.html. Unlike Tesseract, we deliberately do NOT
-  // pre-cache the Whisper model (~40MB) or the onnxruntime-web WASM here:
-  // that weight is dev-versioned and would bloat every install for a feature
-  // that may go unused. Instead the runtime fetch handler below caches them on
-  // the first online transcription (they're CORS GETs, so res.ok is true and
-  // cache.put runs) — so offline audio works after one online use, the same
-  // way the rest of runtime caching works. Only the lib is pre-seeded so the
-  // dynamic import resolves instantly.
-  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/dist/transformers.web.js',
+  // Audio transcription library — jsDelivr's /+esm bundle (NOT the raw dist
+  // file, which has unresolvable bare `onnxruntime-web/webgpu` imports). Pinned
+  // to match TRANSFORMERS_URL in index.html. Unlike Tesseract, we deliberately
+  // do NOT pre-cache the Whisper model (~40MB), the ORT sub-modules, or the
+  // onnxruntime-web WASM here: that weight is dev-versioned and would bloat
+  // every install for a feature that may go unused. Instead the runtime fetch
+  // handler below caches them on the first online transcription (they're CORS
+  // GETs, so res.ok is true and cache.put runs) — so offline audio works after
+  // one online use. Only the entry module is pre-seeded.
+  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm',
 ];
 
 // Install: cache core assets. APP_SHELL is fetched with cache:'reload' so
