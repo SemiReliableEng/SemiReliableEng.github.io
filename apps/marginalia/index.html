@@ -803,7 +803,28 @@
   .type-btn.active { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
 
   /* OCR scan buttons */
-  #ocr-row { display: flex; gap: 8px; margin-top: 6px; }
+  #ocr-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  /* Recording bar — replaces #ocr-row while a recording / transcription is in flight */
+  #rec-bar {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    margin-top: 6px;
+    padding: 8px 14px;
+    border: 1px solid var(--md-outline);
+    border-radius: var(--md-shape-full);
+    font-family: var(--sans);
+    font-size: 13px;
+  }
+  #rec-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #d33; flex: 0 0 auto;
+    animation: rec-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes rec-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+  #rec-timer { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  #rec-status { opacity: 0.7; }
+  #btn-rec-stop { margin-left: auto; }
   .btn-ocr {
     display: inline-flex;
     align-items: center;
@@ -1385,6 +1406,22 @@
       </div>
 
       <div class="settings-section">
+        <div class="settings-section-title">Audio Transcription</div>
+        <div class="settings-card">
+          <div class="settings-hint">
+            Record a quote with your microphone and have it transcribed. Whisper runs locally in your browser (no account needed; downloads a ~40&nbsp;MB model on first use, then works offline). Gemini gives better accuracy but requires the API key above. Falls back to Whisper if Gemini can't be reached.
+          </div>
+          <div class="field-group">
+            <div class="field-label">Transcription Engine</div>
+            <select class="text-input" id="audio-engine" onchange="saveAudioEngine(this.value)" style="font-family:var(--sans);font-size:14px;">
+              <option value="whisper">Whisper (local, free)</option>
+              <option value="gemini">Gemini AI (cloud, needs key)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-title">Storage</div>
         <div class="settings-card">
           <div class="settings-hint">Ask the browser to mark this site's storage as persistent. Without this, browsers can evict your local data (token, op-log cache) under storage pressure or low engagement. The version line below shows the current state. Click here from inside the installed PWA — Chrome's auto-grant heuristic looks for a user gesture.</div>
@@ -1437,9 +1474,19 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
             Scan from photo
           </button>
+          <button class="btn-ocr" id="btn-record" onclick="toggleRecording()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            Record
+          </button>
           <input type="file" id="ocr-camera" accept="image/*" capture="environment" style="display:none">
           <input type="file" id="ocr-file" accept="image/*" style="display:none">
           <input type="file" id="cover-file" accept="image/*" style="display:none">
+        </div>
+        <div id="rec-bar">
+          <span id="rec-dot"></span>
+          <span id="rec-timer">0:00</span>
+          <span id="rec-status"></span>
+          <button class="btn-ocr" id="btn-rec-stop" onclick="toggleRecording()">Stop</button>
         </div>
       </div>
       <div class="field-group" id="location-group">
@@ -1528,7 +1575,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v30';
+const APP_VERSION = 'marginalia-v31';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -2615,8 +2662,9 @@ function updateSettingsFields() {
   // OCR settings
   const eng = document.getElementById('ocr-engine');
   if (eng) eng.value = loadOCREngine();
-  const gkg = document.getElementById('gemini-key-group');
-  if (gkg) gkg.style.display = loadOCREngine() === 'gemini' ? '' : 'none';
+  const aeng = document.getElementById('audio-engine');
+  if (aeng) aeng.value = loadAudioEngine();
+  updateGeminiKeyVisibility();
   const gk = document.getElementById('gemini-key');
   if (gk) gk.value = loadGeminiKey() || '';
   const forgetBtn = document.getElementById('btn-forget-gemini');
@@ -2740,7 +2788,25 @@ const OCR_ENGINE_KEY = 'marginalia_ocr_engine';
 function loadOCREngine() { return localStorage.getItem(OCR_ENGINE_KEY) || 'tesseract'; }
 function saveOCREngine(val) {
   localStorage.setItem(OCR_ENGINE_KEY, val);
-  document.getElementById('gemini-key-group').style.display = val === 'gemini' ? '' : 'none';
+  updateGeminiKeyVisibility();
+}
+
+// Audio transcription engine (mirrors the OCR engine setting). Default to the
+// local Whisper model so the feature works with no account; 'gemini' reuses
+// the same key as OCR. Persisted by default per workspace convention.
+const AUDIO_ENGINE_KEY = 'marginalia_audio_engine';
+function loadAudioEngine() { return localStorage.getItem(AUDIO_ENGINE_KEY) || 'whisper'; }
+function saveAudioEngine(val) {
+  localStorage.setItem(AUDIO_ENGINE_KEY, val);
+  updateGeminiKeyVisibility();
+}
+
+// The Gemini API key is shared between OCR and audio transcription, but its
+// input lives in the Quote Scanner card. Reveal it whenever EITHER engine is
+// set to Gemini, so picking Gemini for audio alone still exposes the key field.
+function updateGeminiKeyVisibility() {
+  const g = document.getElementById('gemini-key-group');
+  if (g) g.style.display = (loadOCREngine() === 'gemini' || loadAudioEngine() === 'gemini') ? '' : 'none';
 }
 
 let activeOCRBtn = null;
@@ -3071,6 +3137,7 @@ if ('serviceWorker' in navigator) {
 <!-- ══ SYNC MODULE GLUE ══════════════════════════════════════════════ -->
 <script type="module">
 import { PersonalSync } from './shared/personal-sync.mjs';
+import { createTranscriber, transcribeSamples, resampleTo16k, encodeWav, TARGET_SAMPLE_RATE } from './transcribe.mjs';
 
 const APP_NAME = 'marginalia';
 const SHA_MIGRATED_KEY = 'marginalia_sha_migrated_v2';
@@ -3532,6 +3599,225 @@ document.addEventListener('visibilitychange', () => {
   lastAutoPull = Date.now();
   sync.pull().then(() => maybeCompact()).catch(() => {});
 });
+
+// ── Audio capture → transcription ──────────────────────────────────────
+// Record from the mic, then transcribe to text in the quote field. Engine is
+// chosen in settings: 'whisper' (on-device, offline) or 'gemini' (cloud).
+// transformers.js is loaded lazily from the pinned CDN build on first use so
+// it never costs anything on a normal page load; the SW runtime-caches it
+// plus the model + ORT wasm so subsequent use works offline (see sw.js).
+
+// Pinned to match sw.js VENDORED — bump both together. Explicit dist file (the
+// browser ESM build) rather than the bare package path, so the URL the SW
+// caches is byte-identical to the one the browser fetches (no redirect).
+const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/dist/transformers.web.js';
+
+let _transformers = null;
+async function loadTransformers() {
+  if (!_transformers) {
+    _transformers = await import(TRANSFORMERS_URL);
+    _transformers.env.allowLocalModels = false;
+    // GitHub Pages doesn't send COOP/COEP, so SharedArrayBuffer/threads are
+    // unavailable; force single-threaded WASM rather than letting ORT probe.
+    _transformers.env.backends.onnx.wasm.numThreads = 1;
+  }
+  return _transformers;
+}
+
+let _whisper = null;
+async function getWhisper(onProgress) {
+  if (!_whisper) {
+    const t = await loadTransformers();
+    _whisper = await createTranscriber(t.pipeline, { progress_callback: onProgress });
+  }
+  return _whisper;
+}
+
+let mediaRecorder = null, recChunks = [], recStream = null, recTimerId = null, recStart = 0;
+
+// One button toggles record/stop; a second 'Stop' button in the bar maps here too.
+window.toggleRecording = async () => {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    stopRecording();
+  } else {
+    await startRecording();
+  }
+};
+
+async function startRecording() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showToast('Recording not supported on this device');
+    return;
+  }
+  try {
+    recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    showToast('Microphone access denied');
+    return;
+  }
+  recChunks = [];
+  mediaRecorder = new MediaRecorder(recStream);
+  mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
+  mediaRecorder.onstop = onRecordingStop;
+  mediaRecorder.start();
+  recStart = Date.now();
+  setRecMode('recording');
+  recTimerId = setInterval(updateRecTimer, 250);
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+  clearInterval(recTimerId);
+  recTimerId = null;
+}
+
+async function onRecordingStop() {
+  if (recStream) recStream.getTracks().forEach(t => t.stop());
+  const type = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
+  const blob = new Blob(recChunks, { type });
+  if (!blob.size) { setRecMode('idle'); showToast('No audio recorded'); return; }
+  await transcribeBlob(blob);
+}
+
+function updateRecTimer() {
+  const secs = Math.floor((Date.now() - recStart) / 1000);
+  const el = document.getElementById('rec-timer');
+  if (el) el.textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+}
+
+// mode: 'recording' | 'processing' | 'idle'
+function setRecMode(mode, statusText) {
+  const bar = document.getElementById('rec-bar');
+  const ocrRow = document.getElementById('ocr-row');
+  const dot = document.getElementById('rec-dot');
+  const timer = document.getElementById('rec-timer');
+  const status = document.getElementById('rec-status');
+  const stop = document.getElementById('btn-rec-stop');
+  if (!bar) return;
+  if (mode === 'idle') {
+    bar.style.display = 'none';
+    updateOCRVisibility(); // restore the photo/record row honoring quote vs note
+    return;
+  }
+  if (ocrRow) ocrRow.style.display = 'none';
+  bar.style.display = 'flex';
+  if (mode === 'recording') {
+    dot.style.display = '';
+    timer.style.display = '';
+    stop.style.display = '';
+    status.textContent = '';
+  } else { // processing
+    dot.style.display = 'none';
+    stop.style.display = 'none';
+    status.textContent = statusText || 'Transcribing…';
+  }
+}
+
+// Decode a recorded blob to mono Float32 PCM at 16 kHz (whisper's rate, and a
+// small/clean WAV for Gemini). decodeAudioData handles the webm/opus the
+// recorder produces; we downmix and resample ourselves for determinism.
+async function decodeTo16kMono(blob) {
+  const buf = await blob.arrayBuffer();
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC();
+  let audioBuf;
+  try {
+    audioBuf = await ctx.decodeAudioData(buf);
+  } finally {
+    ctx.close();
+  }
+  const len = audioBuf.length, chs = audioBuf.numberOfChannels;
+  const mono = new Float32Array(len);
+  for (let c = 0; c < chs; c++) {
+    const d = audioBuf.getChannelData(c);
+    for (let i = 0; i < len; i++) mono[i] += d[i] / chs;
+  }
+  return resampleTo16k(mono, audioBuf.sampleRate);
+}
+
+async function transcribeBlob(blob) {
+  setRecMode('processing', 'Transcribing…');
+  try {
+    const samples = await decodeTo16kMono(blob);
+    const engine = loadAudioEngine();
+    let text = '';
+    if (engine === 'gemini') {
+      try {
+        text = await transcribeWithGemini(samples);
+      } catch (err) {
+        if (!isOfflineError(err)) throw err;
+        showToast('Gemini unreachable — using on-device Whisper');
+        text = await transcribeWithWhisperLocal(samples);
+      }
+    } else {
+      text = await transcribeWithWhisperLocal(samples);
+    }
+    if (text) {
+      appendToEntryText(text);
+      showToast('Quote transcribed!');
+    } else {
+      showToast('No speech detected');
+    }
+  } catch (err) {
+    showToast('Transcription failed: ' + (err.message || err));
+  } finally {
+    setRecMode('idle');
+  }
+}
+
+async function transcribeWithWhisperLocal(samples) {
+  const asr = await getWhisper(p => {
+    if (p.status === 'progress' && typeof p.progress === 'number') {
+      setRecMode('processing', `Downloading model… ${Math.round(p.progress)}%`);
+    }
+  });
+  setRecMode('processing', 'Transcribing…');
+  return transcribeSamples(asr, samples);
+}
+
+async function transcribeWithGemini(samples) {
+  const key = loadGeminiKey();
+  if (!key) throw new Error('Gemini API key not configured');
+  const base64 = bytesToBase64(encodeWav(samples, TARGET_SAMPLE_RATE));
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [
+        { inlineData: { mimeType: 'audio/wav', data: base64 } },
+        { text: 'Transcribe this audio recording of a spoken book quote or note, verbatim. Use natural punctuation and capitalization. Output only the transcribed words, nothing else.' },
+      ]}],
+    }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error?.message || 'Gemini API error');
+  }
+  const data = await res.json();
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const textPart = parts.find(p => p.text && !p.thought);
+  return (textPart?.text || '').trim();
+}
+
+// Chunked to avoid a call-stack overflow from spreading a large byte array.
+function bytesToBase64(bytes) {
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
+
+// Dictation is additive: append to whatever's already in the field rather than
+// clobbering typed text (OCR replaces, but you may record several passes).
+function appendToEntryText(text) {
+  const ta = document.getElementById('entry-text');
+  if (!ta) return;
+  const existing = ta.value.trim();
+  ta.value = existing ? `${existing} ${text}` : text;
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
 </script>
 
 </body>

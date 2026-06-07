@@ -1,5 +1,5 @@
 // Marginalia Service Worker
-const CACHE = 'marginalia-v30';
+const CACHE = 'marginalia-v31';
 
 // First-party app shell. Fetched with cache:'reload' on install (see below).
 const APP_SHELL = [
@@ -7,6 +7,7 @@ const APP_SHELL = [
   '/apps/marginalia/index.html',
   '/apps/marginalia/manifest.json',
   '/apps/marginalia/shared/personal-sync.mjs',
+  '/apps/marginalia/transcribe.mjs',
 ];
 
 // Pinned third-party assets. Versions pinned in URLs (and mirrored in
@@ -24,6 +25,16 @@ const VENDORED = [
   'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core-simd-lstm.wasm.js',
   'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core-simd-lstm.wasm',
   'https://tessdata.projectnaptha.com/4.0.0/eng.traineddata.gz',
+  // Audio transcription library (the browser ESM build). Pinned to match
+  // TRANSFORMERS_URL in index.html. Unlike Tesseract, we deliberately do NOT
+  // pre-cache the Whisper model (~40MB) or the onnxruntime-web WASM here:
+  // that weight is dev-versioned and would bloat every install for a feature
+  // that may go unused. Instead the runtime fetch handler below caches them on
+  // the first online transcription (they're CORS GETs, so res.ok is true and
+  // cache.put runs) — so offline audio works after one online use, the same
+  // way the rest of runtime caching works. Only the lib is pre-seeded so the
+  // dynamic import resolves instantly.
+  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/dist/transformers.web.js',
 ];
 
 // Install: cache core assets. APP_SHELL is fetched with cache:'reload' so
