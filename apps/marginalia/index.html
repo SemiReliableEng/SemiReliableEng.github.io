@@ -1575,7 +1575,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v33';
+const APP_VERSION = 'marginalia-v34';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -3607,12 +3607,15 @@ document.addEventListener('visibilitychange', () => {
 // it never costs anything on a normal page load; the SW runtime-caches it
 // plus the model + ORT wasm so subsequent use works offline (see sw.js).
 
-// Pinned to match sw.js VENDORED — bump both together. Must be jsDelivr's
-// /+esm endpoint, NOT the raw dist/transformers.web.js file: the raw file has
-// bare `import "onnxruntime-web/webgpu"` specifiers a browser can't resolve
-// without a bundler/import-map, whereas /+esm rewrites them to resolvable CDN
-// URLs (and pulls the ORT sub-modules, which the SW then runtime-caches).
-const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm';
+// Pinned to match sw.js VENDORED — bump both together. Two non-obvious pins:
+//  1) jsDelivr's /+esm endpoint, NOT the raw dist/transformers.web.js file —
+//     that file has bare `import "onnxruntime-web/webgpu"` specifiers a browser
+//     can't resolve without a bundler/import-map; /+esm rewrites them to
+//     resolvable CDN URLs (and pulls the ORT sub-modules, SW-runtime-cached).
+//  2) version 3.x, NOT 4.x — 4.2.0 ships onnxruntime-web@1.26.0-dev, which
+//     can't create a session for the q8 whisper decoder ("Missing required
+//     scale ... MatMulNBits"). 3.x ships a stable ORT, the proven browser combo.
+const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm';
 
 let _transformers = null;
 async function loadTransformers() {

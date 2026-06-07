@@ -1,5 +1,5 @@
 // Marginalia Service Worker
-const CACHE = 'marginalia-v33';
+const CACHE = 'marginalia-v34';
 
 // First-party app shell. Fetched with cache:'reload' on install (see below).
 const APP_SHELL = [
@@ -34,7 +34,7 @@ const VENDORED = [
   // handler below caches them on the first online transcription (they're CORS
   // GETs, so res.ok is true and cache.put runs) — so offline audio works after
   // one online use. Only the entry module is pre-seeded.
-  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm',
+  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm',
 ];
 
 // Install: cache core assets. APP_SHELL is fetched with cache:'reload' so
