@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
 <meta name="theme-color" content="#372f29"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -71,7 +71,7 @@
   *{box-sizing:border-box;margin:0;padding:0; -webkit-tap-highlight-color: transparent;}
   body{font-family:var(--sans);background:var(--bg);color:var(--ink);height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
 
-  header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--md-inverse-surface);color:var(--md-inverse-on-surface);flex-shrink:0;gap:16px;flex-wrap:wrap;}
+  header{display:flex;align-items:center;justify-content:space-between;padding:calc(12px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) 12px calc(20px + env(safe-area-inset-left));background:var(--md-inverse-surface);color:var(--md-inverse-on-surface);flex-shrink:0;gap:16px;flex-wrap:wrap;}
   .header-left{display:flex;align-items:baseline;gap:12px;}
   h1{font-family:var(--serif);font-size:22px;font-weight:400;font-style:italic;color:var(--md-inverse-on-surface);letter-spacing:0.02em;}
   .subtitle{font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--md-inverse-primary);margin-top:1px;}
@@ -100,8 +100,8 @@
   #map{flex:1;background:var(--md-surface-container);}
 
   #elev-panel{height:0;overflow:hidden;background:var(--md-surface-container-low);border-top:1px solid var(--border);transition:height .3s var(--md-motion-standard);flex-shrink:0;}
-  #elev-panel.open{height:160px;}
-  #elev-inner{padding:12px 18px;height:100%;display:flex;flex-direction:column;}
+  #elev-panel.open{height:calc(160px + env(safe-area-inset-bottom));}
+  #elev-inner{padding:12px 18px calc(12px + env(safe-area-inset-bottom));height:100%;display:flex;flex-direction:column;}
   #elev-title{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;}
   #elev-close{cursor:pointer;font-size:18px;color:var(--ink-soft);background:none;border:none;padding:4px;border-radius:var(--md-shape-full);display:flex;align-items:center;justify-content:center;}
   #elev-close:hover{background:rgba(0,0,0,0.05);}
@@ -264,11 +264,20 @@
       transition:transform .28s cubic-bezier(.4,0,.2,1);
     }
     #sidebar.open{transform:translateX(0);}
-    /* Elevation panel takes less vertical room on small screens */
-    #elev-panel.open{height:140px;}
+    /* Elevation panel takes less vertical room on small screens. Grown by the
+       bottom safe-area inset so its content clears the nav bar / home indicator
+       under viewport-fit=cover (the inner padding lifts the chart above it). */
+    #elev-panel.open{height:calc(140px + env(safe-area-inset-bottom));}
     /* Settings modal goes full-screen on mobile — matches the hike-list overlay. */
     .modal-overlay{padding:0;align-items:stretch;}
     .modal-sheet{max-width:100%;max-height:100dvh;height:100dvh;border-radius:0;box-shadow:none;}
+    /* Both overlays go edge-to-edge on mobile, so under viewport-fit=cover their
+       top headers slide under the notch/status bar and their bottom edges under
+       the nav bar / home indicator. Pad both ends with the matching insets. */
+    .sidebar-header,
+    .modal-header{padding-top:calc(14px + env(safe-area-inset-top));}
+    .add-more-btn{margin-bottom:calc(12px + env(safe-area-inset-bottom));}
+    .modal-body{padding-bottom:calc(20px + env(safe-area-inset-bottom));}
     /* Lift the chip above mobile browser chrome (URL bar / nav bar) that
        can overlap the map's bottom edge. env(safe-area-inset-bottom) only
        covers the iOS home indicator, not the browser toolbar itself, so
@@ -515,7 +524,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v20';
+const APP_VERSION = 'cairn-v21';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
