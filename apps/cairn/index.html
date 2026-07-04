@@ -194,8 +194,18 @@
   .popup-row{display:flex;justify-content:space-between;font-size:12px;gap:20px;padding:2px 0;}
   .popup-key{color:var(--ink-soft);}
   .popup-val{font-family:var(--mono);color:var(--ink);font-weight:500;}
-  .popup-elev-btn{margin-top:12px;width:100%;padding:8px;background:var(--md-primary-container);border:none;border-radius:var(--md-shape-md);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);color:var(--md-on-primary-container);transition:all .2s;}
+  .popup-actions{display:flex;gap:6px;margin-top:12px;}
+  .popup-elev-btn{flex:1;padding:8px;background:var(--md-primary-container);border:none;border-radius:var(--md-shape-md);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);color:var(--md-on-primary-container);transition:all .2s;}
   .popup-elev-btn:hover{background:var(--md-primary);color:var(--md-on-primary);box-shadow:var(--md-elevation-1);}
+  .popup-del-btn{flex:none;padding:8px 10px;background:transparent;border:none;border-radius:var(--md-shape-md);font-size:14px;line-height:1;cursor:pointer;color:var(--dist-band-4);transition:all .2s;}
+  .popup-del-btn:hover{background:var(--dist-band-4);color:#fff;}
+
+  /* Undo snackbar (delete-hike) */
+  #toast{position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(12px);z-index:1200;display:flex;align-items:center;gap:16px;max-width:calc(100vw - 32px);padding:12px 16px;background:var(--ink);color:var(--bg);border-radius:var(--md-shape-md);box-shadow:var(--md-elevation-2);font-family:var(--sans);font-size:13px;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .2s,transform .2s,visibility .2s;}
+  #toast.show{opacity:1;visibility:visible;pointer-events:auto;transform:translateX(-50%) translateY(0);}
+  #toast-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #toast-undo{flex:none;padding:4px 6px;background:none;border:none;cursor:pointer;color:var(--dist-band-1);font-family:var(--sans);font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;}
+  #toast-undo:hover{color:#fff;}
 
   /* Sync status pill + header settings button */
   .sync-status{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--md-inverse-primary);letter-spacing:.05em;padding:3px 8px;border-radius:var(--md-shape-full);cursor:pointer;transition:background .15s;text-transform:uppercase;}
@@ -365,6 +375,11 @@
   </div>
 </main>
 
+<div id="toast" role="status" aria-live="polite">
+  <span id="toast-label"></span>
+  <button id="toast-undo" type="button">Undo</button>
+</div>
+
 <!-- ══ SETTINGS MODAL ══ -->
 <div class="modal-overlay" id="modal-settings" onclick="if(event.target===this)closeSettings()">
   <div class="modal-sheet">
@@ -500,7 +515,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v18';
+const APP_VERSION = 'cairn-v20';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -952,7 +967,10 @@ function popupHTML(h,i){
     <div class="popup-row"><span class="popup-key">Distance</span><span class="popup-val">${dispDist(h.distKm)}</span></div>
     <div class="popup-row"><span class="popup-key">Elev gain</span><span class="popup-val">${dispElev(h.elevGain)}</span></div>
   </div>
-  <button class="popup-elev-btn" onclick="showElev(${i})">↗ Elevation profile</button>`;
+  <div class="popup-actions">
+    <button class="popup-elev-btn" onclick="showElev(${i})">↗ Elevation profile</button>
+    <button class="popup-del-btn" onclick="deleteHike(${i})" title="Delete hike" aria-label="Delete hike">🗑</button>
+  </div>`;
 }
 
 function highlightSidebar(i){
@@ -996,11 +1014,15 @@ function showElev(i){
   const h=hikes[i]; if(!h) return;
   map.closePopup(); highlightSidebar(i);
   const coords=h.coords, step=Math.max(1,Math.floor(coords.length/300));
-  const labels=[],elevs=[]; let cum=0;
+  // `sampled` maps each chart datapoint back to its track coord so the hover
+  // handler can mark it on the map — the chart is subsampled by `step`, so the
+  // chart index is not the raw coords index.
+  const labels=[],elevs=[],sampled=[]; let cum=0;
   for(let j=0;j<coords.length;j+=step){
     if(j>0) cum+=haversine(coords[Math.max(0,j-step)],coords[j]);
     labels.push(rawDist(cum).toFixed(2));
     elevs.push(+rawElev(coords[j].ele).toFixed(1));
+    sampled.push(coords[j]);
   }
   document.getElementById('elev-label').textContent='Elevation · '+h.name;
   document.getElementById('elev-panel').classList.add('open');
@@ -1010,6 +1032,11 @@ function showElev(i){
     backgroundColor:c=>{const g=c.chart.ctx.createLinearGradient(0,0,0,c.chart.height);g.addColorStop(0,(h.color||'#8b4513')+'55');g.addColorStop(1,(h.color||'#8b4513')+'05');return g;},
     pointRadius:0,tension:.3}]},
     options:{responsive:true,maintainAspectRatio:false,animation:false,
+      interaction:{mode:'index',intersect:false},
+      onHover:(e,els,chart)=>{
+        if(els.length) showElevHoverPoint(chart._sampled?.[els[0].index]);
+        else hideElevHoverPoint();
+      },
       plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,
         callbacks:{title:items=>`${items[0].label} ${distUnit()}`,label:item=>`${item.raw} ${elevUnit()}`},
         backgroundColor:'#fcf0ea',titleColor:'#211a14',bodyColor:'#52443a',borderColor:'#d7c3b7',borderWidth:1,
@@ -1019,10 +1046,32 @@ function showElev(i){
         y:{ticks:{maxTicksLimit:4,font:{family:'DM Mono',size:10},color:'#52443a',callback:v=>`${v}${elevUnit()}`},grid:{color:'#d7c3b722'},border:{color:'#d7c3b7'}}
         }}});
   elevChart._hikeIdx=i;
+  elevChart._sampled=sampled;
+  // Clear the map marker when the cursor leaves the chart area (onHover only
+  // fires while over the canvas). Assigned (not addEventListener) so repeated
+  // showElev calls don't stack listeners.
+  document.getElementById('elev-canvas').onmouseleave=hideElevHoverPoint;
+}
+// Single reusable marker highlighting the elevation-hover point on the map.
+// White halo + dark centre so it stays legible over any palette-colored track.
+let elevHoverMarker=null;
+function showElevHoverPoint(coord){
+  if(!coord) return;
+  const ll=[coord.lat,coord.lon];
+  if(!elevHoverMarker){
+    elevHoverMarker=L.circleMarker(ll,{radius:6,color:'#fff',weight:3,fillColor:'#211a14',fillOpacity:1,interactive:false});
+  } else {
+    elevHoverMarker.setLatLng(ll);
+  }
+  if(!map.hasLayer(elevHoverMarker)) elevHoverMarker.addTo(map);
+}
+function hideElevHoverPoint(){
+  if(elevHoverMarker&&map.hasLayer(elevHoverMarker)) map.removeLayer(elevHoverMarker);
 }
 function closeElev(){
   document.getElementById('elev-panel').classList.remove('open');
   if(elevChart){elevChart.destroy();elevChart=null;}
+  hideElevHoverPoint();
 }
 
 // ── locate (one-shot GPS) ─────────────────────────────────────────
@@ -1454,11 +1503,60 @@ function clearAll(){
     for (const id of ids) applyOp('delete-hike', id, null);
   }
   closeElev(); ridgeCoverageKm=null;
-  document.getElementById('drop-zone').classList.remove('hidden');
-  document.getElementById('hike-count').textContent='0';
-  document.getElementById('add-more-btn').style.display='none';
+  syncEmptyState();
   renderChip();
   // renderAll() inside applyOp also clears map layers.
+}
+
+// updateSidebar() (via renderAll) returns early when hikes is empty and doesn't
+// touch the drop zone / add-more button / count — those belong to the
+// map+list chrome, not the list body. Reconcile them here after any op that can
+// empty (or refill) the list, so deleting hikes one-by-one down to zero lands
+// in the same state as Clear All, and undoing back up restores the chrome.
+function syncEmptyState(){
+  const empty = !hikes.length;
+  document.getElementById('drop-zone').classList.toggle('hidden', !empty);
+  document.getElementById('add-more-btn').style.display = empty ? 'none' : 'block';
+  if (empty) document.getElementById('hike-count').textContent = '0';
+}
+
+// Delete a single hike from the map popup, with a 30 s Undo. The delete is a
+// plain delete-hike op (same path clearAll uses); Undo re-appends an add-hike
+// reconstructed from the in-memory view model. We reuse the captured entityId
+// (h.id) rather than recomputing it — computeHikeId must never run on hydrated
+// round-tripped coords, and reusing the id also means Undo re-adds the *same*
+// entity, cancelling the tombstone on replay. packPoints(normalizeCoords(...))
+// is idempotent on already-quantized coords, so the restored geometry is
+// byte-identical to the original.
+function deleteHike(i){
+  const h = hikes[i];
+  if (!h) return;
+  const id = h.id;
+  const payload = {
+    pointsPacked: packPoints(normalizeCoords(h.coords)),
+    meta: { name: h.name, date: h.date, distKm: h.distKm, elevGain: h.elevGain },
+  };
+  map.closePopup();
+  closeElev();
+  applyOp('delete-hike', id, null);
+  syncEmptyState();
+  showUndoToast(`Deleted “${h.name}”`, () => {
+    applyOp('add-hike', id, payload);
+    syncEmptyState();
+  });
+}
+
+// Bottom snackbar with a single Undo action. Reassigns the button handler each
+// call (no listener stacking) and restarts the 30 s auto-dismiss timer.
+let toastTimer = null;
+function showUndoToast(message, onUndo){
+  const toast = document.getElementById('toast');
+  const dismiss = () => { toast.classList.remove('show'); clearTimeout(toastTimer); toastTimer = null; };
+  document.getElementById('toast-label').textContent = message;
+  document.getElementById('toast-undo').onclick = () => { dismiss(); onUndo(); };
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(dismiss, 30000);
 }
 
 // ── file loading ──────────────────────────────────────────────────
@@ -1636,6 +1734,7 @@ window.closeHikeList = closeHikeList;
 window.showElev = showElev;
 window.closeElev = closeElev;
 window.focusHike = focusHike;
+window.deleteHike = deleteHike;
 window.clearAll = clearAll;
 window.locateMe = locateMe;
 window.togglePrefetchEnabled = togglePrefetchEnabled;
