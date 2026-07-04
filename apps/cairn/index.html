@@ -538,7 +538,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v23';
+const APP_VERSION = 'cairn-v24';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -1037,16 +1037,25 @@ function showElev(i){
   const h=hikes[i]; if(!h) return;
   map.closePopup(); highlightSidebar(i);
   const coords=h.coords, step=Math.max(1,Math.floor(coords.length/300));
+  // Sample every `step`th point, but always include the final point so the
+  // x-axis reaches the full distance (its last tick is the hike total).
+  const idxs=[];
+  for(let j=0;j<coords.length;j+=step) idxs.push(j);
+  if(idxs.length && idxs[idxs.length-1]!==coords.length-1) idxs.push(coords.length-1);
   // `sampled` maps each chart datapoint back to its track coord so the hover
-  // handler can mark it on the map — the chart is subsampled by `step`, so the
-  // chart index is not the raw coords index.
+  // handler can mark it on the map — the chart is subsampled, so the chart
+  // index is not the raw coords index.
   const labels=[],elevs=[],sampled=[]; let cum=0;
-  for(let j=0;j<coords.length;j+=step){
-    if(j>0) cum+=haversine(coords[Math.max(0,j-step)],coords[j]);
+  for(let k=0;k<idxs.length;k++){
+    const j=idxs[k];
+    if(k>0) cum+=haversine(coords[idxs[k-1]],coords[j]);
     labels.push(rawDist(cum).toFixed(2));
     elevs.push(+rawElev(coords[j].ele).toFixed(1));
     sampled.push(coords[j]);
   }
+  // The subsampled cumulative undershoots the full-resolution total, so pin the
+  // final label to the hike's real distance — matches the sidebar/chip figure.
+  if(labels.length) labels[labels.length-1]=rawDist(h.distKm).toFixed(2);
   document.getElementById('elev-label').textContent='Elevation · '+h.name;
   document.getElementById('elev-panel').classList.add('open');
   if(elevChart) elevChart.destroy();
@@ -1065,7 +1074,12 @@ function showElev(i){
         backgroundColor:'#fcf0ea',titleColor:'#211a14',bodyColor:'#52443a',borderColor:'#d7c3b7',borderWidth:1,
         titleFont:{family:'DM Mono',size:11},bodyFont:{family:'DM Mono',size:11}}},
         scales:{
-        x:{ticks:{maxTicksLimit:8,font:{family:'DM Mono',size:10},color:'#52443a',callback:function(v){return this.getLabelForValue(v)+distUnit();}},grid:{color:'#d7c3b722'},border:{color:'#d7c3b7'}},
+        x:{ticks:{autoSkip:false,font:{family:'DM Mono',size:10},color:'#52443a',callback:function(v){return this.getLabelForValue(v)+distUnit();}},
+          // Force evenly-spaced ticks that always include index 0 and the last
+          // point, so the total distance is labeled at the right edge. autoSkip
+          // is off above so Chart.js can't cull the endpoint tick.
+          afterBuildTicks:axis=>{const last=labels.length-1;if(last<1){axis.ticks=last===0?[{value:0}]:axis.ticks;return;}const want=Math.min(5,last+1),seen=new Set();axis.ticks=[];for(let k=0;k<want;k++){const value=Math.round(k*last/(want-1));if(!seen.has(value)){seen.add(value);axis.ticks.push({value});}}},
+          grid:{color:'#d7c3b722'},border:{color:'#d7c3b7'}},
         y:{ticks:{maxTicksLimit:4,font:{family:'DM Mono',size:10},color:'#52443a',callback:v=>`${v}${elevUnit()}`},grid:{color:'#d7c3b722'},border:{color:'#d7c3b7'}}
         }}});
   elevChart._hikeIdx=i;
