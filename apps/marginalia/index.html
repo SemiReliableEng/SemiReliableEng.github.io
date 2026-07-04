@@ -2,7 +2,20 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<script>
+  // Mirror the true visible viewport height into --app-height. Android Chrome
+  // installed PWAs can resolve 100dvh taller than the screen, pushing the
+  // bottom-anchored FAB / bottom sheets / toast off the fold; innerHeight is the
+  // trustworthy value. Runs in <head> before first paint to avoid a resize flash.
+  // (Same fix as cairn v22 — see workspace CLAUDE.md.)
+  (function(){
+    function setAppHeight(){document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');}
+    setAppHeight();
+    window.addEventListener('resize', setAppHeight);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', setAppHeight);
+  })();
+</script>
 <meta name="theme-color" content="#372f29">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -100,11 +113,12 @@
     color: var(--ink);
     min-height: 100vh;
     min-height: 100dvh;
+    min-height: var(--app-height, 100dvh);
     overflow-x: hidden;
   }
 
   /* ── Layout ── */
-  #app { display: flex; flex-direction: column; height: 100dvh; }
+  #app { display: flex; flex-direction: column; height: var(--app-height, 100dvh); }
 
   .screen { display: none; flex-direction: column; flex: 1; overflow: hidden; }
   .screen.active { display: flex; }
@@ -113,7 +127,7 @@
   .header {
     background: var(--md-inverse-surface);
     color: var(--md-inverse-on-surface);
-    padding: 16px 16px 14px;
+    padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 14px calc(16px + env(safe-area-inset-left));
     display: flex;
     align-items: center;
     gap: 8px;
@@ -892,7 +906,7 @@
       max-width: none;
       margin: 0;
       box-shadow: none;
-      height: 100dvh;
+      height: var(--app-height, 100dvh);
     }
 
     #screen-shelf {
@@ -901,7 +915,7 @@
       min-width: 380px;
       max-width: 380px;
       border-right: 1px solid rgba(26,22,18,0.12);
-      height: 100dvh;
+      height: var(--app-height, 100dvh);
       position: relative;
     }
 
@@ -909,7 +923,7 @@
       display: flex;
       flex-direction: column;
       flex: 1;
-      height: 100dvh;
+      height: var(--app-height, 100dvh);
       overflow: hidden;
       background: var(--paper);
     }
@@ -1579,7 +1593,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v36';
+const APP_VERSION = 'marginalia-v37';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
