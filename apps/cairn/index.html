@@ -538,7 +538,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v22';
+const APP_VERSION = 'cairn-v23';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -1065,7 +1065,7 @@ function showElev(i){
         backgroundColor:'#fcf0ea',titleColor:'#211a14',bodyColor:'#52443a',borderColor:'#d7c3b7',borderWidth:1,
         titleFont:{family:'DM Mono',size:11},bodyFont:{family:'DM Mono',size:11}}},
         scales:{
-        x:{ticks:{maxTicksLimit:8,font:{family:'DM Mono',size:10},color:'#52443a',callback:v=>`${v}${distUnit()}`},grid:{color:'#d7c3b722'},border:{color:'#d7c3b7'}},
+        x:{ticks:{maxTicksLimit:8,font:{family:'DM Mono',size:10},color:'#52443a',callback:function(v){return this.getLabelForValue(v)+distUnit();}},grid:{color:'#d7c3b722'},border:{color:'#d7c3b7'}},
         y:{ticks:{maxTicksLimit:4,font:{family:'DM Mono',size:10},color:'#52443a',callback:v=>`${v}${elevUnit()}`},grid:{color:'#d7c3b722'},border:{color:'#d7c3b7'}}
         }}});
   elevChart._hikeIdx=i;
