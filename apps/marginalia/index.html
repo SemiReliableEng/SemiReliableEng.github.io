@@ -859,32 +859,38 @@
   .btn-ocr:disabled { opacity: 0.38; cursor: not-allowed; }
   .btn-ocr svg { width: 16px; height: 16px; }
 
-  /* Search all quotes screen */
-  .search-quotes-wrap {
-    padding: 12px 16px;
-    background: var(--md-surface);
-    border-bottom: 1px solid var(--md-outline-variant);
-    flex-shrink: 0;
-  }
-  .search-quotes-input {
-    width: 100%;
-    background: var(--md-surface-container-high);
-    border: none;
-    border-radius: var(--md-shape-full);
-    padding: 12px 16px;
+  /* ── Universal search results (shelf) ── */
+  .search-section-label {
     font-family: var(--sans);
-    font-size: 15px;
-    color: var(--md-on-surface);
-    outline: none;
-    transition: background var(--md-motion-short) var(--md-motion-standard);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 18px 4px 8px;
   }
-  .search-quotes-input:focus { background: var(--md-surface-container-highest); }
-
-  .all-quotes-scroll {
-    flex: 1;
-    overflow-y: auto;
-    padding: 16px;
-    padding-bottom: calc(20px + var(--safe-bottom));
+  .search-section-label:first-child { margin-top: 2px; }
+  .search-result {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    box-shadow: var(--md-elevation-1);
+  }
+  .search-result:active { opacity: 0.85; }
+  .search-result-text {
+    font-family: var(--serif);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+  .search-result-note .search-result-text { font-family: var(--sans); }
+  mark {
+    background: color-mix(in srgb, var(--md-primary) 24%, transparent);
+    color: inherit;
+    border-radius: 3px;
+    padding: 0 1px;
   }
   .quote-book-ref {
     font-size: 12px;
@@ -1211,9 +1217,9 @@
           <span class="sync-dot"></span>
           <span id="sync-label">local</span>
         </span>
-        <button class="btn-icon" onclick="showScreen('screen-all-quotes')" title="Search all quotes">
+        <button class="btn-icon" onclick="openAskAIModal()" title="Ask AI about your quotes">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
           </svg>
         </button>
         <button class="btn-icon" onclick="showScreen('screen-settings')" title="Settings">
@@ -1226,7 +1232,7 @@
     <div class="shelf-search-wrap">
       <div class="shelf-search-row">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input id="shelf-search-input" class="shelf-search-input" type="search" placeholder="Filter your books…" oninput="onShelfFilterInput()" name="book-filter" autocomplete="one-time-code">
+        <input id="shelf-search-input" class="shelf-search-input" type="search" placeholder="Search books, quotes, notes…" oninput="onShelfFilterInput()" name="book-filter" autocomplete="one-time-code">
       </div>
       <button class="btn-add-book" onclick="addBookFromShelf()" title="Add a book">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1320,26 +1326,6 @@
     <button class="fab" onclick="openAddModal()" title="Add quote or note">+</button>
   </div>
 
-  <!-- ══ ALL QUOTES SCREEN ══ -->
-  <div id="screen-all-quotes" class="screen">
-    <div class="header">
-      <button class="btn-icon" onclick="showScreen('screen-shelf')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
-        </svg>
-      </button>
-      <div class="header-title" style="font-style:normal;font-size:17px;font-family:var(--sans);font-weight:500;">All Quotes</div>
-      <button class="btn-icon" onclick="openAskAIModal()" title="Ask AI about your quotes">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-        </svg>
-      </button>
-    </div>
-    <div class="search-quotes-wrap">
-      <input class="search-quotes-input" id="search-quotes-input" type="search" placeholder="Search quotes…" oninput="renderAllQuotes()" autocorrect="off">
-    </div>
-    <div class="all-quotes-scroll" id="all-quotes-list"></div>
-  </div>
 
   <!-- ══ SETTINGS SCREEN ══ -->
   <div id="screen-settings" class="screen">
@@ -1593,7 +1579,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v37';
+const APP_VERSION = 'marginalia-v38';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -1850,7 +1836,6 @@ function showScreen(id) {
     document.getElementById('search-results').innerHTML = `<div class="search-hint"><div class="search-hint-icon">📚</div>Search for a book to add it to your shelf</div>`;
     setTimeout(() => inp.focus(), 50);
   }
-  if (id === 'screen-all-quotes') { renderAllQuotes(); setTimeout(() => document.getElementById('search-quotes-input').focus(), 100); }
   if (id === 'screen-settings') { updateSettingsFields(); }
 }
 
@@ -1969,67 +1954,126 @@ function openBook(bookId) {
 // ═══════════════════════════════════════════════
 // SHELF
 // ═══════════════════════════════════════════════
+// Escape a string for literal use inside a RegExp.
+function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// HTML-escape `text`, then wrap case-insensitive occurrences of the (already
+// lowercased) query `q` in <mark>. Both sides are HTML-escaped first so a query
+// containing &, <, > still matches the escaped text, and the result is
+// injection-safe.
+function highlight(text, q) {
+  const t = esc(text || '');
+  if (!q) return t;
+  try {
+    return t.replace(new RegExp(escapeRegExp(esc(q)), 'gi'), m => `<mark>${m}</mark>`);
+  } catch { return t; }
+}
+
+function bookCardHTML(book, q) {
+  const count = db.entries.filter(e => e.bookId === book.id && e.type === 'quote').length;
+  const coverHtml = book.cover
+    ? `<img class="book-cover" src="${book.cover}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+    : '';
+  const placeholderStyle = book.cover ? 'display:none' : '';
+  const selectedCls = (isDesktop() && currentBookId === book.id) ? ' selected' : '';
+  return `<div class="book-card${selectedCls}" onclick="openBook('${book.id}')">
+    <div class="book-cover-wrap">
+      ${coverHtml}
+      <div class="book-cover-placeholder" style="${placeholderStyle}">📗</div>
+    </div>
+    <div class="book-info">
+      <div>
+        <div class="book-title">${highlight(book.title, q)}</div>
+        <div class="book-author">${highlight(book.author, q)}</div>
+      </div>
+      <div class="book-meta">
+        <span class="quote-count">${count} quote${count !== 1 ? 's' : ''}</span>
+      </div>
+    </div>
+    <button class="btn-add-quick" onclick="event.stopPropagation();quickAddQuote('${book.id}')" title="Add quote">+</button>
+  </div>`;
+}
+
+// The shelf doubles as a universal search: with no query it's the book shelf;
+// with a query it renders grouped Books / Quotes / Notes matches in place.
 function renderShelf() {
   db = loadData();
   const el = document.getElementById('shelf-list');
   const filterEl = document.getElementById('shelf-search-input');
-  const filter = filterEl ? filterEl.value.trim().toLowerCase() : '';
+  const raw = filterEl ? filterEl.value.trim() : '';
+  const q = raw.toLowerCase();
 
-  // Sort by most recent entry added for each book
+  // Sort books by most recent entry added.
   const latestEntry = {};
   db.entries.forEach(e => {
     if (!latestEntry[e.bookId] || e.createdAt > latestEntry[e.bookId]) latestEntry[e.bookId] = e.createdAt;
   });
-  let books = [...db.books].sort((a,b) => (latestEntry[b.id]||b.addedAt||0) - (latestEntry[a.id]||a.addedAt||0));
+  const books = [...db.books].sort((a,b) => (latestEntry[b.id]||b.addedAt||0) - (latestEntry[a.id]||a.addedAt||0));
 
-  if (filter) books = books.filter(b =>
-    b.title.toLowerCase().includes(filter) || (b.author||'').toLowerCase().includes(filter)
+  // ── No query: the book shelf ──
+  if (!q) {
+    if (!books.length) {
+      el.innerHTML = `<div class="shelf-empty">
+        <div class="shelf-empty-icon">📖</div>
+        <h3>Your shelf is empty</h3>
+        <p>Tap <strong>+</strong> to search for a book and start logging quotes.</p>
+      </div>`;
+      return;
+    }
+    el.innerHTML = books.map(b => bookCardHTML(b, '')).join('');
+    return;
+  }
+
+  // ── Query: universal grouped search (each section matches its own text) ──
+  const matchBooks = books.filter(b =>
+    b.title.toLowerCase().includes(q) ||
+    (b.author || '').toLowerCase().includes(q) ||
+    String(b.year || '').includes(q)
   );
+  const byRecent = (a,b) => b.createdAt - a.createdAt;
+  const matchQuotes = db.entries
+    .filter(e => e.type === 'quote' && ((e.text||'').toLowerCase().includes(q) || (e.location||'').toLowerCase().includes(q)))
+    .sort(byRecent);
+  const matchNotes = db.entries
+    .filter(e => e.type === 'note' && (e.text||'').toLowerCase().includes(q))
+    .sort(byRecent);
 
-  if (!books.length && filter) {
-    const q = esc(filterEl.value.trim());
+  if (!matchBooks.length && !matchQuotes.length && !matchNotes.length) {
+    const qe = esc(raw);
     el.innerHTML = `<div class="shelf-empty">
       <div class="shelf-empty-icon">🔍</div>
-      <h3>No books matching &ldquo;${q}&rdquo;</h3>
+      <h3>Nothing matches &ldquo;${qe}&rdquo;</h3>
       <p>Not on your shelf yet?</p>
-      <button class="btn-primary" onclick="openSearchWithQuery(document.getElementById('shelf-search-input').value.trim())">Search for &ldquo;${q}&rdquo;</button>
+      <button class="btn-primary" onclick="openSearchWithQuery(document.getElementById('shelf-search-input').value.trim())">Search for &ldquo;${qe}&rdquo;</button>
     </div>`;
     return;
   }
 
-  if (!books.length) {
-    el.innerHTML = `<div class="shelf-empty">
-      <div class="shelf-empty-icon">📖</div>
-      <h3>Your shelf is empty</h3>
-      <p>Tap <strong>+</strong> to search for a book and start logging quotes.</p>
-    </div>`;
-    return;
-  }
+  const bookById = {};
+  db.books.forEach(b => { bookById[b.id] = b; });
+  const refHTML = (e) => {
+    const b = bookById[e.bookId];
+    return b ? `<div class="quote-book-ref">— ${highlight(b.title, q)}, ${highlight(b.author, q)}</div>` : '';
+  };
+  const resultHTML = (e, cls) => `<div class="search-result${cls}" onclick="openBook('${e.bookId}')">
+    <div class="search-result-text">${highlight(e.text, q)}</div>
+    ${refHTML(e)}
+  </div>`;
 
-  el.innerHTML = books.map(book => {
-    const count = db.entries.filter(e => e.bookId === book.id && e.type === 'quote').length;
-    const coverHtml = book.cover
-      ? `<img class="book-cover" src="${book.cover}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
-      : '';
-    const placeholderStyle = book.cover ? 'display:none' : '';
-    const selectedCls = (isDesktop() && currentBookId === book.id) ? ' selected' : '';
-    return `<div class="book-card${selectedCls}" onclick="openBook('${book.id}')">
-      <div class="book-cover-wrap">
-        ${coverHtml}
-        <div class="book-cover-placeholder" style="${placeholderStyle}">📗</div>
-      </div>
-      <div class="book-info">
-        <div>
-          <div class="book-title">${esc(book.title)}</div>
-          <div class="book-author">${esc(book.author)}</div>
-        </div>
-        <div class="book-meta">
-          <span class="quote-count">${count} quote${count !== 1 ? 's' : ''}</span>
-        </div>
-      </div>
-      <button class="btn-add-quick" onclick="event.stopPropagation();quickAddQuote('${book.id}')" title="Add quote">+</button>
-    </div>`;
-  }).join('');
+  let html = '';
+  if (matchBooks.length) {
+    html += `<div class="search-section-label">Books · ${matchBooks.length}</div>`;
+    html += matchBooks.map(b => bookCardHTML(b, q)).join('');
+  }
+  if (matchQuotes.length) {
+    html += `<div class="search-section-label">Quotes · ${matchQuotes.length}</div>`;
+    html += matchQuotes.map(e => resultHTML(e, '')).join('');
+  }
+  if (matchNotes.length) {
+    html += `<div class="search-section-label">Notes · ${matchNotes.length}</div>`;
+    html += matchNotes.map(e => resultHTML(e, ' search-result-note')).join('');
+  }
+  el.innerHTML = html;
 }
 
 function quickAddQuote(bookId) {
@@ -2579,38 +2623,6 @@ document.getElementById('modal-meta').addEventListener('click', function(e) {
 // ═══════════════════════════════════════════════
 // ALL QUOTES SEARCH
 // ═══════════════════════════════════════════════
-function renderAllQuotes() {
-  db = loadData();
-  const q = (document.getElementById('search-quotes-input').value || '').toLowerCase().trim();
-  const el = document.getElementById('all-quotes-list');
-
-  let entries = db.entries.filter(e => e.type === 'quote');
-  if (q) {
-    entries = entries.filter(e => {
-      const book = db.books.find(b => b.id === e.bookId);
-      return e.text.toLowerCase().includes(q) ||
-        (book && (book.title.toLowerCase().includes(q) || book.author.toLowerCase().includes(q)));
-    });
-  }
-
-  if (!entries.length) {
-    el.innerHTML = `<div class="quotes-empty"><div class="quotes-empty-icon">🔍</div>${q ? 'No quotes match your search.' : 'No quotes yet.'}</div>`;
-    return;
-  }
-
-  const sorted = [...entries].sort((a,b) => b.createdAt - a.createdAt);
-  el.innerHTML = sorted.map(e => {
-    const book = db.books.find(b => b.id === e.bookId);
-    return `<div class="quote-card" onclick="openBook('${e.bookId}')" style="cursor:pointer">
-      <div class="quote-text">${esc(e.text)}</div>
-      ${e.location ? `<div class="quote-location">📍 ${esc(e.location)}</div>` : ''}
-      ${book ? `<div class="quote-book-ref">— ${esc(book.title)}, ${esc(book.author)}</div>` : ''}
-      ${e.userAdded ? `<div class="quote-date">${formatDate(e.createdAt)}</div>` : ''}
-      <button class="quote-copy" onclick="event.stopPropagation();copyQuote('${e.id}')" title="Copy quote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
-    </div>`;
-  }).join('');
-}
-
 // ═══════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════
