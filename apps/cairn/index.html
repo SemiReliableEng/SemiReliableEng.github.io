@@ -538,7 +538,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v24';
+const APP_VERSION = 'cairn-v25';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -550,6 +550,18 @@ const SNAPSHOT_KEY = 'cairn_snapshot';
 // One-time clean-up of the pre-op-log snapshot key. Safe to leave in: no-op once removed.
 try { localStorage.removeItem('cairn-hikes-v1'); } catch {}
 const COVERAGE_M = 30;
+// Hike-line opacity when the Ridge Trail overlay is on: stretches running
+// along the ridge keep the normal solid weight, everything else drops back
+// so the eye reads "what I've covered" without losing the rest of the track.
+const TRACK_OPACITY = 0.85;
+const TRACK_OPACITY_OFF_RIDGE = 0.25;
+// Runs shorter than this collapse into their neighbour. Raw per-point
+// classification speckles badly on GPS jitter near the trail — without this
+// a single hike can shatter into hundreds of 2-point polylines.
+const RIDGE_RUN_MIN_M = 40;
+// Ridge sub-segment sampling step for the coverage %. Must stay under
+// COVERAGE_M so a covered stretch can't be stepped over between samples.
+const COVERAGE_SAMPLE_M = 25;
 const COLORS = ['#d4633a','#4a7c59','#5b7fa6','#8b5e8b','#b8852a','#3d7a7a','#c05050','#5c7a3e','#7a5c8b','#3a7a8b'];
 
 // Bay Area Ridge Trail route — embedded from official GPX (ridgetrail.org)
@@ -563,6 +575,8 @@ let ridgeTotalKm = null;
 let ridgeLayer = null;
 let ridgeVisible = false;
 let ridgeCoverageKm = null;
+let ridgeEdgeIndex = null;             // spatial index over ridge sub-segments
+const ridgeRunsCache = new Map();      // hike id -> run list (see classifyHikeAgainstRidge)
 const hikes = [];
 let elevChart = null;
 
@@ -785,6 +799,22 @@ function distM(a, b) { // fast flat-earth metres
   const latM=111320, lonM=111320*Math.cos(a.lat*Math.PI/180);
   return Math.hypot((b.lat-a.lat)*latM, (b.lon-a.lon)*lonM);
 }
+// Perpendicular distance from p to the segment a→b, in metres.
+// Ridge Trail vertices are RDP-simplified to ~11 m tolerance, which leaves a
+// median gap of 73 m between them (p99 365 m, max 2.4 km). Nearest-*vertex*
+// matching would therefore call a hike walking straight down a long ridge
+// edge "off trail", so anything comparing a point to the ridge must measure
+// against the edge, not its endpoints.
+function distToSegM(p, a, b) {
+  const latM=111320, lonM=111320*Math.cos(p.lat*Math.PI/180);
+  const px=(p.lon-a.lon)*lonM, py=(p.lat-a.lat)*latM;
+  const bx=(b.lon-a.lon)*lonM, by=(b.lat-a.lat)*latM;
+  const len2 = bx*bx + by*by;
+  if (len2 === 0) return Math.hypot(px, py);
+  // Clamped projection parameter: 0 = at a, 1 = at b.
+  const t = Math.max(0, Math.min(1, (px*bx + py*by) / len2));
+  return Math.hypot(px - t*bx, py - t*by);
+}
 
 // ── GPX parsing ───────────────────────────────────────────────────
 function parseGPX(text, filename) {
@@ -812,21 +842,20 @@ function parseGPX(text, filename) {
 function toggleRidgeTrail(on) {
   ridgeVisible = on;
   try { localStorage.setItem(RIDGE_KEY, on ? '1' : '0'); } catch {}
+  // Either direction has to redraw the hike lines, not just show/hide the
+  // ridge: the tracks carry ridge-overlap shading only while the overlay is on.
+  // renderAll() re-adds ridgeLayer and recomputes coverage on its own.
   if (!on) {
     if (ridgeLayer) map.removeLayer(ridgeLayer);
     document.getElementById('ridge-status').textContent = '';
+    renderAll();
     renderChip();
     return;
   }
-  // Already built
-  if (ridgeSegments) {
-    ridgeLayer.addTo(map);
-    if (hikes.length) recomputeCoverage();
-    return;
-  }
-  // Build from embedded static data — instant, no network needed
-  buildRidgeFromSegments(RIDGE_STATIC);
-  if (hikes.length) recomputeCoverage();
+  // Build from embedded static data on first use — instant, no network needed
+  if (ridgeSegments) ridgeLayer.addTo(map);
+  else buildRidgeFromSegments(RIDGE_STATIC);
+  renderAll();
 }
 
 function setRidgeStatus(msg) {
@@ -863,6 +892,124 @@ function buildRidgeFromSegments(segments) {
   [...baseLines, ...topLines].forEach(pl => pl.bindPopup(ridgePopup));
 }
 
+// ── ridge-overlap classification (per hike point) ─────────────────
+// Drives the hike-line shading: the stretches of a track that run along the
+// Ridge Trail stay solid, the rest fades to TRACK_OPACITY_OFF_RIDGE. This is
+// the mirror image of recomputeCoverage() below — that asks "how much of the
+// ridge have I walked", this asks "which parts of this hike were on it" — so
+// the two keep separate indexes.
+const RIDGE_BUCKET = 0.0005; // ~56 m of latitude, ~44 m of longitude at 37.8°N
+
+// Spatial hash over ridge *sub-segments*. Each edge is rasterized into every
+// bucket it passes through, stepping by half a bucket so no bucket along its
+// path is skipped.
+function buildRidgeEdgeIndex() {
+  const grid = new Map(), edges = [];
+  ridgeSegments.forEach(seg => {
+    for (let i = 1; i < seg.length; i++) {
+      const a = seg[i-1], b = seg[i], idx = edges.length;
+      edges.push([a, b]);
+      const span = Math.max(Math.abs(b.lat-a.lat), Math.abs(b.lon-a.lon));
+      const steps = Math.max(1, Math.ceil(span / (RIDGE_BUCKET/2)));
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const key = Math.round((a.lat+(b.lat-a.lat)*t)/RIDGE_BUCKET) + ',' +
+                    Math.round((a.lon+(b.lon-a.lon)*t)/RIDGE_BUCKET);
+        let bucket = grid.get(key);
+        if (!bucket) grid.set(key, bucket = []);
+        // Walking monotonically, so a repeat is almost always the previous
+        // insert; this collapses those without a full membership test.
+        if (bucket[bucket.length-1] !== idx) bucket.push(idx);
+      }
+    }
+  });
+  return { grid, edges };
+}
+
+// A 3x3 bucket probe is sufficient, not merely convenient: the 30 m threshold
+// is 0.68 buckets of longitude at this latitude and the rasterizer samples
+// every half bucket, so the nearest edge sample can be at most 0.93 buckets
+// away — which can shift the bucket index by 1, never 2.
+function isPointOnRidge(p, index) {
+  const bLat = Math.round(p.lat/RIDGE_BUCKET), bLon = Math.round(p.lon/RIDGE_BUCKET);
+  for (let dlat = -1; dlat <= 1; dlat++) for (let dlon = -1; dlon <= 1; dlon++) {
+    const bucket = index.grid.get(`${bLat+dlat},${bLon+dlon}`);
+    if (!bucket) continue;
+    for (const ei of bucket) {
+      const e = index.edges[ei];
+      if (distToSegM(p, e[0], e[1]) <= COVERAGE_M) return true;
+    }
+  }
+  return false;
+}
+
+// Collapse the raw per-point flags into runs, absorbing anything shorter than
+// RIDGE_RUN_MIN_M. Runs strictly alternate, so flipping one makes it match
+// *both* neighbours and all three collapse into a single run — that property
+// is what lets this converge in one queue drain (every absorption removes at
+// least one run) instead of needing a rescan per flip. A track that hugs the
+// 30 m boundary can produce tens of thousands of raw runs, and the naive
+// rescan-the-whole-list version was quadratic enough to freeze the UI on one.
+function smoothRuns(coords, flags) {
+  const cum = [0];
+  for (let i = 1; i < coords.length; i++) cum[i] = cum[i-1] + distM(coords[i-1], coords[i]);
+
+  // Raw alternating runs as a doubly-linked list.
+  let first = { onRidge: flags[0], start: 0, end: 0, prev: null, next: null, dead: false };
+  let tail = first;
+  const queue = [first];
+  for (let i = 1; i < flags.length; i++) {
+    if (flags[i] === tail.onRidge) { tail.end = i; continue; }
+    tail.next = { onRidge: flags[i], start: i, end: i, prev: tail, next: null, dead: false };
+    tail = tail.next;
+    queue.push(tail);
+  }
+
+  const lenOf = r => cum[r.end] - cum[r.start];
+  while (queue.length) {
+    const r = queue.pop();
+    if (r.dead || lenOf(r) >= RIDGE_RUN_MIN_M) continue;
+    const p = r.prev, n = r.next;
+    if (!p && !n) break; // one run left — nothing to absorb it into
+    const merged = {
+      onRidge: (p || n).onRidge, // both neighbours share a flag: r, flipped
+      start: (p || r).start,
+      end:   (n || r).end,
+      prev:  p ? p.prev : null,
+      next:  n ? n.next : null,
+      dead:  false,
+    };
+    r.dead = true;
+    if (p) p.dead = true;
+    if (n) n.dead = true;
+    if (merged.prev) merged.prev.next = merged; else first = merged;
+    if (merged.next) merged.next.prev = merged;
+    queue.push(merged); // the result may itself still be too short
+  }
+
+  // Flatten to plain records — the cache holds these, and keeping the prev/next
+  // links would retain the entire raw list (circularly) per hike.
+  const runs = [];
+  for (let node = first; node; node = node.next) {
+    runs.push({ onRidge: node.onRidge, start: node.start, end: node.end });
+  }
+  return runs;
+}
+
+// Returns [{ onRidge, start, end }] over indices into h.coords, end inclusive.
+// Cached by hike id: the id is content-addressed over the coords and the ridge
+// data is static, so a result can never go stale — only orphaned, which
+// renderAll() prunes.
+function classifyHikeAgainstRidge(h) {
+  const cached = ridgeRunsCache.get(h.id);
+  if (cached) return cached;
+  if (!ridgeEdgeIndex) ridgeEdgeIndex = buildRidgeEdgeIndex();
+  const flags = h.coords.map(c => isPointOnRidge(c, ridgeEdgeIndex));
+  const runs = smoothRuns(h.coords, flags);
+  ridgeRunsCache.set(h.id, runs);
+  return runs;
+}
+
 // ── coverage computation ──────────────────────────────────────────
 function recomputeCoverage() {
   if (!ridgeCoords || !hikes.length) return;
@@ -884,11 +1031,22 @@ function recomputeCoverage() {
     return false;
   }
   let covered = 0;
-  // Walk each segment
+  // Walk each segment, subdividing long edges before sampling. The ridge data
+  // is RDP-simplified, so an edge can run 2.4 km between vertices (median 73 m)
+  // — sampling only the midpoint credited or discredited that whole edge from
+  // one probe. Sampling at <= COVERAGE_SAMPLE_M keeps each verdict local to a
+  // stretch shorter than the 30 m match radius, and makes this agree with the
+  // per-hike-point shading instead of contradicting it on long straightaways.
   ridgeSegments.forEach(seg => {
     for(let i=1;i<seg.length;i++) {
-      const mid = {lat:(seg[i-1].lat+seg[i].lat)/2, lon:(seg[i-1].lon+seg[i].lon)/2};
-      if(isNear(mid)) covered += haversine(seg[i-1], seg[i]);
+      const a = seg[i-1], b = seg[i];
+      const edgeKm = haversine(a, b);
+      const n = Math.max(1, Math.ceil(edgeKm * 1000 / COVERAGE_SAMPLE_M));
+      const pieceKm = edgeKm / n;
+      for (let s = 0; s < n; s++) {
+        const t = (s + 0.5) / n;
+        if (isNear({ lat: a.lat+(b.lat-a.lat)*t, lon: a.lon+(b.lon-a.lon)*t })) covered += pieceKm;
+      }
     }
   });
   ridgeCoverageKm = covered;
@@ -960,14 +1118,32 @@ function distBandClass(distKm) {
 function renderAll() {
   map.eachLayer(l=>{if(l instanceof L.Polyline||l instanceof L.CircleMarker||l instanceof L.LayerGroup) map.removeLayer(l);});
   if(ridgeVisible&&ridgeLayer) ridgeLayer.addTo(map);
+  // Drop cached ridge-overlap runs for hikes that no longer exist. Bounded and
+  // cheap; the cache is otherwise write-once per hike id.
+  if (ridgeRunsCache.size > hikes.length) {
+    const live = new Set(hikes.map(h => h.id));
+    for (const id of ridgeRunsCache.keys()) if (!live.has(id)) ridgeRunsCache.delete(id);
+  }
   hikes.forEach((h,i)=>{
     h.color=COLORS[i%COLORS.length];
     const ll=h.coords.map(c=>[c.lat,c.lon]);
-    const line=L.polyline(ll,{color:h.color,weight:3,opacity:0.85}).addTo(map);
-    h.layer=line;
-    // Bind popup + click to the visible line so focusHike()'s openPopup() still works.
     const bindHit = (layer) => { layer.bindPopup(popupHTML(h,i)); layer.on('click',()=>highlightSidebar(i)); };
-    bindHit(line);
+    // With the Ridge Trail overlay on, split the track so the stretches that
+    // run along the ridge stay solid and everything else fades back. Overlay
+    // off = one uniform line, exactly as before.
+    if (ridgeVisible && ridgeSegments) {
+      for (const r of classifyHikeAgainstRidge(h)) {
+        // end+2, not end+1: carry the next run's first point so consecutive
+        // runs share the edge between them and the track has no gap at the
+        // transition. The last run clamps harmlessly.
+        bindHit(L.polyline(ll.slice(r.start, r.end+2), {
+          color: h.color, weight: 3,
+          opacity: r.onRidge ? TRACK_OPACITY : TRACK_OPACITY_OFF_RIDGE
+        }).addTo(map));
+      }
+    } else {
+      bindHit(L.polyline(ll,{color:h.color,weight:3,opacity:TRACK_OPACITY}).addTo(map));
+    }
     L.circleMarker(ll[0],{radius:4,fillColor:'#4caf50',color:'#fff',weight:1.5,fillOpacity:1,interactive:false}).addTo(map);
     L.circleMarker(ll[ll.length-1],{radius:4,fillColor:'#e53935',color:'#fff',weight:1.5,fillOpacity:1,interactive:false}).addTo(map);
     // Invisible wider hit geometry so 2.5–4 px lines and 4 px end-dots are
@@ -975,7 +1151,11 @@ function renderAll() {
     // aren't feasible. Added on top so clicks near (but not on) the visible
     // line still open the popup. Opacity 0.001 (imperceptible) rather than 0
     // because SVG's `visiblePainted` hit test can skip fully-transparent paint.
-    bindHit(L.polyline(ll,{color:'#000',weight:22,opacity:0.001}).addTo(map));
+    // This is also `h.layer`: it spans the whole track regardless of how many
+    // pieces the visible line was split into, so focusHike()'s getBounds() and
+    // openPopup() behave exactly as they did with a single visible polyline.
+    h.layer = L.polyline(ll,{color:'#000',weight:22,opacity:0.001}).addTo(map);
+    bindHit(h.layer);
     bindHit(L.circleMarker(ll[0],{radius:14,color:'#000',fillColor:'#000',weight:0,opacity:0.001,fillOpacity:0.001}).addTo(map));
     bindHit(L.circleMarker(ll[ll.length-1],{radius:14,color:'#000',fillColor:'#000',weight:0,opacity:0.001,fillOpacity:0.001}).addTo(map));
   });
