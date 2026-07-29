@@ -199,6 +199,12 @@
   .popup-elev-btn:hover{background:var(--md-primary);color:var(--md-on-primary);box-shadow:var(--md-elevation-1);}
   .popup-del-btn{flex:none;padding:8px 10px;background:transparent;border:none;border-radius:var(--md-shape-md);font-size:14px;line-height:1;cursor:pointer;color:var(--dist-band-4);transition:all .2s;}
   .popup-del-btn:hover{background:var(--dist-band-4);color:#fff;}
+  .popup-actions.tight{margin-top:6px;}
+  .popup-snap-btn{width:100%;padding:8px;background:transparent;border:1px solid var(--md-outline-variant);border-radius:var(--md-shape-md);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);color:var(--ink-soft);transition:all .2s;}
+  .popup-snap-btn:hover{border-color:var(--md-primary);color:var(--md-primary);}
+  .popup-snap-btn.on{background:var(--md-primary);border-color:var(--md-primary);color:var(--md-on-primary);}
+  .popup-snap-btn.on:hover{background:var(--md-primary);color:var(--md-on-primary);}
+  .popup-snap-note{font-family:var(--mono);font-size:10px;color:var(--ink-soft);margin-top:5px;text-align:center;line-height:1.35;}
 
   /* Undo snackbar (delete-hike) */
   #toast{position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(12px);z-index:1200;display:flex;align-items:center;gap:16px;max-width:calc(100vw - 32px);padding:12px 16px;background:var(--ink);color:var(--bg);border-radius:var(--md-shape-md);box-shadow:var(--md-elevation-2);font-family:var(--sans);font-size:13px;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .2s,transform .2s,visibility .2s;}
@@ -538,7 +544,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v25';
+const APP_VERSION = 'cairn-v26';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -576,7 +582,9 @@ let ridgeLayer = null;
 let ridgeVisible = false;
 let ridgeCoverageKm = null;
 let ridgeEdgeIndex = null;             // spatial index over ridge sub-segments
-const ridgeRunsCache = new Map();      // hike id -> run list (see classifyHikeAgainstRidge)
+let ridgeArcs = null;                  // per-segment cumulative arc length
+const ridgeRunsCache = new Map();      // hike id -> match result (see classifyHikeAgainstRidge)
+const snappedCache = new Map();        // hike id -> { coords, runs } snapped view
 const hikes = [];
 let elevChart = null;
 
@@ -641,6 +649,44 @@ function saveSnapshotToStorage(snap) {
 // multiple copies. We always keep our own ops because push reads them
 // straight off `ops` (filtered by deviceId + coverage). update-hike carries
 // device-specific edits and is preserved verbatim.
+// Replay order. Every place that folds ops must agree on this, or a "later op
+// wins" argument made in one place can be false in another.
+function replayOrder(a, b) {
+  return (a.ts - b.ts) || (a.opId < b.opId ? -1 : 1);
+}
+
+// Our own repeated update-hike ops touching the *same field set* on the same
+// hike: only the last survives replay, so the earlier ones are pure storage
+// waste. Returns the key they collapse on, or null when the op must be kept.
+//
+// This is a deliberate, narrow exception to "update-hike ops are never
+// dropped", and the width matters. That rule exists because per-device meta
+// diffs diverge — device A renames while device B fixes the date, and folding
+// either away loses an edit. Neither hazard applies here: same device (so ts
+// ordering is a total order over one author) and identical key set (so every
+// key the older op wrote is overwritten by the newer one). Widening this to
+// other devices, or to ops with differing key sets, breaks CRDT correctness.
+//
+// Without it, the snap toggle — the one meta field users flip back and forth
+// rather than set once — would leave a permanent op behind on every press.
+function updateCollapseKey(op) {
+  if (op.op !== 'update-hike' || op.deviceId !== deviceId) return null;
+  const keys = Object.keys(op.data?.meta || {}).sort().join(',');
+  return keys ? `${op.entityId}:${keys}` : null;
+}
+
+function collapseOwnUpdates(list) {
+  const kept = new Map();
+  const out = [];
+  for (const op of list) {
+    const key = updateCollapseKey(op);
+    if (!key) { out.push(op); continue; }
+    const existing = kept.get(key);
+    if (!existing || replayOrder(existing, op) < 0) kept.set(key, op);
+  }
+  return [...out, ...kept.values()];
+}
+
 function minimalOpsForStorage() {
   const keptAddDel = new Map(); // `${op}:${entityId}` → chosen op
   const rest = [];
@@ -656,7 +702,7 @@ function minimalOpsForStorage() {
     }
     rest.push(op);
   }
-  return [...keptAddDel.values(), ...rest];
+  return [...keptAddDel.values(), ...collapseOwnUpdates(rest)];
 }
 
 function saveOps() {
@@ -734,6 +780,10 @@ function hydrateHike(id, points, meta) {
     dateMs: isNaN(t) ? -Infinity : t,
     distKm: meta.distKm,
     elevGain: meta.elevGain,
+    // Editable meta, so it must be read back here as well as merged in
+    // materializeInto — otherwise the flag works until compaction absorbs the
+    // update-hike op into the snapshot and then silently reverts.
+    snapped: !!meta.snapped,
     coords: denormalizeCoords(points || []),
   };
 }
@@ -748,8 +798,7 @@ function materializeInto(target) {
       byId.set(id, hydrateHike(id, readSnapshotPoints(state), state.meta || {}));
     }
   }
-  const sorted = ops.slice().sort((a, b) =>
-    (a.ts - b.ts) || (a.opId < b.opId ? -1 : 1));
+  const sorted = ops.slice().sort(replayOrder);
   for (const op of sorted) {
     if (op.op === 'add-hike') {
       const payload = readOpPayload(op);
@@ -853,8 +902,8 @@ function toggleRidgeTrail(on) {
     return;
   }
   // Build from embedded static data on first use — instant, no network needed
-  if (ridgeSegments) ridgeLayer.addTo(map);
-  else buildRidgeFromSegments(RIDGE_STATIC);
+  if (ridgeLayer) ridgeLayer.addTo(map);
+  else buildRidgeLayer();
   renderAll();
 }
 
@@ -862,14 +911,23 @@ function setRidgeStatus(msg) {
   document.getElementById('ridge-status').textContent = msg;
 }
 
-function buildRidgeFromSegments(segments) {
+// Route geometry, built without touching the map. Kept separate from layer
+// construction because the snap toggle needs the data even when the overlay is
+// hidden — a snapped hike stays snapped whether or not the ridge is on screen.
+function ensureRidgeData() {
+  if (ridgeSegments) return true;
   // Normalise: static data uses [lat,lon] arrays; convert to {lat,lon} objects
-  ridgeSegments = segments.map(seg => seg.map(p => Array.isArray(p) ? {lat:p[0],lon:p[1]} : p));
+  ridgeSegments = RIDGE_STATIC.map(seg => seg.map(p => Array.isArray(p) ? {lat:p[0],lon:p[1]} : p));
   ridgeCoords = ridgeSegments.flat();
   ridgeTotalKm = 0;
   ridgeSegments.forEach(seg => {
     for(let i=1;i<seg.length;i++) ridgeTotalKm += haversine(seg[i-1], seg[i]);
   });
+  return true;
+}
+
+function buildRidgeLayer() {
+  ensureRidgeData();
   // Barbershop pattern: white casing underneath + black dashed on top. The
   // white shows through the black gaps, giving an alternating black/white
   // that no hike line can match (hikes are single-colored on a cream
@@ -892,23 +950,46 @@ function buildRidgeFromSegments(segments) {
   [...baseLines, ...topLines].forEach(pl => pl.bindPopup(ridgePopup));
 }
 
-// ── ridge-overlap classification (per hike point) ─────────────────
-// Drives the hike-line shading: the stretches of a track that run along the
-// Ridge Trail stay solid, the rest fades to TRACK_OPACITY_OFF_RIDGE. This is
-// the mirror image of recomputeCoverage() below — that asks "how much of the
-// ridge have I walked", this asks "which parts of this hike were on it" — so
-// the two keep separate indexes.
+// ── ridge matching (anchor → grow → bridge) ───────────────────────
+// Answers "which parts of this hike were on the Ridge Trail", driving both the
+// line shading and the snap-to-trail toggle. The mirror image of
+// recomputeCoverage() below — that asks "how much of the ridge have I walked"
+// — so the two keep separate indexes.
+//
+// Deliberately NOT a per-point distance test. Asking each point independently
+// whether it is within COVERAGE_M of the ridge makes a hike that plainly
+// follows the trail end-to-end flap on and off wherever GPS drift or the
+// route's RDP simplification pushes the two apart for a few hundred metres.
+// That is a property of the *sequence*, so no choice of radius fixes it:
+// widen it enough to absorb a real divergence and it starts swallowing
+// genuinely parallel trails everywhere else.
+//
+// Instead: long stretches of tight agreement are treated as anchors and
+// trusted, then the match floods outward from them and finally bridges the
+// gaps *through the ridge geometry itself*. Evidence propagates from where it
+// is strong to where it is weak, rather than every point fending for itself.
 const RIDGE_BUCKET = 0.0005; // ~56 m of latitude, ~44 m of longitude at 37.8°N
+const ANCHOR_SNAP_M = 30;    // tight radius that seeds an anchor
+const ANCHOR_MIN_M  = 150;   // a seed run must be this long to be trusted
+const GROW_SNAP_M   = 120;   // widened radius once an anchor is vouching
+const BRIDGE_MAX_M  = 1000;  // longest ridge gap two anchors may bridge over
+const BRIDGE_DETOUR = 3;     // reject a bridge if the raw track across the gap
+                             // is this many times longer than the ridge path
+                             // (i.e. the hiker really did leave and come back)
+const JUNCTION_M    = 60;    // ridge segments this close are treated as joined
+const ARC_SLACK_M   = 50;    // tolerance when testing arc advance against ground advance
+const GROW_SLACK_PTS = 8;    // bad projections a flood may step over before giving up
 
 // Spatial hash over ridge *sub-segments*. Each edge is rasterized into every
 // bucket it passes through, stepping by half a bucket so no bucket along its
-// path is skipped.
+// path is skipped. Edges carry their segment index and start-vertex so a
+// projection can be expressed as an arc length along that segment.
 function buildRidgeEdgeIndex() {
   const grid = new Map(), edges = [];
-  ridgeSegments.forEach(seg => {
+  ridgeSegments.forEach((seg, segIdx) => {
     for (let i = 1; i < seg.length; i++) {
       const a = seg[i-1], b = seg[i], idx = edges.length;
-      edges.push([a, b]);
+      edges.push({ segIdx, vi: i-1, a, b });
       const span = Math.max(Math.abs(b.lat-a.lat), Math.abs(b.lon-a.lon));
       const steps = Math.max(1, Math.ceil(span / (RIDGE_BUCKET/2)));
       for (let s = 0; s <= steps; s++) {
@@ -926,21 +1007,258 @@ function buildRidgeEdgeIndex() {
   return { grid, edges };
 }
 
-// A 3x3 bucket probe is sufficient, not merely convenient: the 30 m threshold
-// is 0.68 buckets of longitude at this latitude and the rasterizer samples
-// every half bucket, so the nearest edge sample can be at most 0.93 buckets
-// away — which can shift the bucket index by 1, never 2.
-function isPointOnRidge(p, index) {
+// Cumulative metres from each segment's start to each of its vertices. This is
+// the linear reference every continuity check is phrased in: "did the match
+// advance along the trail the way the hiker advanced across the ground".
+function buildRidgeArc() {
+  return ridgeSegments.map(seg => {
+    const arc = [0];
+    for (let i = 1; i < seg.length; i++) arc[i] = arc[i-1] + distM(seg[i-1], seg[i]);
+    return arc;
+  });
+}
+
+// Project p onto the segment a→b, returning the foot of the perpendicular and
+// its distance, both in one pass (callers need the point, not just the range).
+function projectToSeg(p, a, b) {
+  const latM = 111320, lonM = 111320*Math.cos(p.lat*Math.PI/180);
+  const px = (p.lon-a.lon)*lonM, py = (p.lat-a.lat)*latM;
+  const bx = (b.lon-a.lon)*lonM, by = (b.lat-a.lat)*latM;
+  const len2 = bx*bx + by*by;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, (px*bx + py*by) / len2));
+  return {
+    t,
+    d: Math.hypot(px - t*bx, py - t*by),
+    lat: a.lat + (b.lat-a.lat)*t,
+    lon: a.lon + (b.lon-a.lon)*t,
+  };
+}
+
+// Nearest ridge projection within maxDist, or null. The bucket probe radius is
+// derived from maxDist rather than fixed: one bucket is ~44 m of longitude
+// here, and the rasterizer's half-bucket stride can put the nearest sample up
+// to half a bucket beyond the true closest point, hence the +1.
+function projectOntoRidge(p, maxDist, index, arcs) {
+  const lonMPerBucket = RIDGE_BUCKET * 111320 * Math.cos(p.lat*Math.PI/180);
+  const r = Math.ceil(maxDist / lonMPerBucket) + 1;
   const bLat = Math.round(p.lat/RIDGE_BUCKET), bLon = Math.round(p.lon/RIDGE_BUCKET);
-  for (let dlat = -1; dlat <= 1; dlat++) for (let dlon = -1; dlon <= 1; dlon++) {
+  let best = null;
+  for (let dlat = -r; dlat <= r; dlat++) for (let dlon = -r; dlon <= r; dlon++) {
     const bucket = index.grid.get(`${bLat+dlat},${bLon+dlon}`);
     if (!bucket) continue;
     for (const ei of bucket) {
       const e = index.edges[ei];
-      if (distToSegM(p, e[0], e[1]) <= COVERAGE_M) return true;
+      const pr = projectToSeg(p, e.a, e.b);
+      if (pr.d > maxDist || (best && pr.d >= best.d)) continue;
+      const edgeLen = distM(e.a, e.b);
+      best = {
+        d: pr.d, segIdx: e.segIdx, lat: pr.lat, lon: pr.lon,
+        arc: arcs[e.segIdx][e.vi] + pr.t * edgeLen,
+      };
     }
   }
-  return false;
+  return best;
+}
+
+// The point sitting `arc` metres along a ridge segment. Once a match is
+// expressed as (segment, arc) the geometry is recoverable, which is what lets
+// the snap fill a bridged gap from the trail itself.
+function pointAtArc(segIdx, arc, arcs) {
+  const seg = ridgeSegments[segIdx], a = arcs[segIdx];
+  let lo = 0, hi = a.length - 1;
+  if (arc <= 0) return { lat: seg[0].lat, lon: seg[0].lon };
+  if (arc >= a[hi]) return { lat: seg[hi].lat, lon: seg[hi].lon };
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (a[mid] <= arc) lo = mid; else hi = mid; }
+  const span = a[hi] - a[lo], t = span === 0 ? 0 : (arc - a[lo]) / span;
+  return {
+    lat: seg[lo].lat + (seg[hi].lat - seg[lo].lat) * t,
+    lon: seg[lo].lon + (seg[hi].lon - seg[lo].lon) * t,
+  };
+}
+
+// Where a track runs parallel to a switchback, the nearest-edge projection can
+// flip to the far limb for a point or two — arc jumps hundreds of metres and
+// straight back. Real motion cannot do that: advance along the trail is bounded
+// by advance across the ground. Repairing these isolated spikes at the source
+// keeps one bad projection from defeating every continuity test downstream
+// (before this, a single 708 m flip mid-track cost ~10% of a hike's match).
+function repairArcSpikes(coords, projs) {
+  let repaired = 0;
+  // Two passes so a two-point spike collapses as well as a one-point spike.
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 1; i < projs.length - 1; i++) {
+      const a = projs[i-1], b = projs[i], c = projs[i+1];
+      if (!a || !b || !c) continue;
+      if (a.segIdx !== b.segIdx || b.segIdx !== c.segIdx) continue;
+      const step = distM(coords[i-1], coords[i]) + distM(coords[i], coords[i+1]) + ARC_SLACK_M;
+      if (Math.abs(b.arc - a.arc) <= step || Math.abs(b.arc - c.arc) <= step) continue; // not isolated
+      if (Math.abs(c.arc - a.arc) > step) continue;                                     // neighbours disagree
+      b.arc = (a.arc + c.arc) / 2;
+      repaired++;
+    }
+  }
+  return repaired;
+}
+
+// Seed runs: maximal stretches of consecutive points that project inside
+// ANCHOR_SNAP_M onto the *same* ridge segment while advancing consistently in
+// one direction along it. Direction is fixed by the run's first real step, so
+// a genuine out-and-back ends one run and starts another rather than being
+// flattened into one.
+function seedRuns(projs) {
+  const runs = [];
+  let cur = null;
+  for (let i = 0; i < projs.length; i++) {
+    const pr = projs[i];
+    if (!pr) { cur = null; continue; }
+    if (cur && cur.segIdx === pr.segIdx) {
+      const delta = pr.arc - cur.lastArc;
+      if (cur.dir === 0) {
+        if (delta !== 0) cur.dir = Math.sign(delta);
+        cur.end = i; cur.lastArc = pr.arc; continue;
+      }
+      // Small counter-moves are GPS noise; a sustained one is a turnaround.
+      if (Math.sign(delta) === cur.dir || Math.abs(delta) < ANCHOR_SNAP_M) {
+        cur.end = i; cur.lastArc = pr.arc; continue;
+      }
+    }
+    cur = { segIdx: pr.segIdx, start: i, end: i, dir: 0,
+            startArc: pr.arc, lastArc: pr.arc };
+    runs.push(cur);
+  }
+  return runs;
+}
+
+// Flood outward from a trusted anchor, adopting neighbouring points at the
+// wider GROW_SNAP_M so long as they stay on the same segment and keep moving
+// the same way along it. This is what carries a drifting stretch that no
+// per-point radius would have accepted.
+// A bad projection is stepped over rather than treated as the end of the run:
+// spike repair removes the obvious flips, but sparse or noisy stretches can
+// still throw an isolated point, and giving up on the first one truncates the
+// flood far short of where the evidence actually stops.
+function growAnchor(run, coords, projsWide) {
+  const dir = run.dir || 1;
+  // `ahead` is the arc the run is reaching towards, signed by travel direction:
+  // walking backwards off the head, an earlier point must sit *behind* startArc;
+  // walking forwards off the tail, a later point must sit *ahead* of lastArc.
+  const fits = (pr, from, sense) =>
+    pr && pr.segIdx === run.segIdx && (pr.arc - from) * dir * sense > -ANCHOR_SNAP_M;
+
+  let misses = 0;
+  for (let i = run.start - 1; i >= 0; i--) {
+    const pr = projsWide[i];
+    if (fits(pr, run.startArc, -1)) { run.start = i; run.startArc = pr.arc; misses = 0; }
+    else if (++misses > GROW_SLACK_PTS) break;
+  }
+  misses = 0;
+  for (let i = run.end + 1; i < coords.length; i++) {
+    const pr = projsWide[i];
+    if (fits(pr, run.lastArc, 1)) { run.end = i; run.lastArc = pr.arc; misses = 0; }
+    else if (++misses > GROW_SLACK_PTS) break;
+  }
+  return run;
+}
+
+// Two anchors bridge when the ridge can plausibly account for the gap between
+// them: same segment (or segments that physically meet), same direction, a
+// ridge gap short enough to be drift rather than a detour, and a raw track
+// across the gap that isn't far longer than the ridge path it would replace.
+// That last guard is what keeps a real off-trail excursion from being absorbed.
+function canBridge(a, b, cum) {
+  const trackGap = cum[b.start] - cum[a.end];
+  if (a.segIdx === b.segIdx) {
+    // Unsigned: an out-and-back legitimately rejoins the trail behind itself,
+    // and the two-sided guard below is what actually distinguishes drift from
+    // a detour. (An earlier version rejected on direction mismatch and bridged
+    // nothing at all — a short seed run picks its sign from one noisy step.)
+    const ridgeGap = Math.abs(b.startArc - a.lastArc);
+    if (ridgeGap > BRIDGE_MAX_M) return false;
+    // Both directions matter. Track ≫ ridge means the hiker really did leave
+    // the trail and come back; ridge ≫ track means bridging would credit a
+    // stretch of trail they crossed in a few metres.
+    return trackGap <= BRIDGE_DETOUR * Math.max(ridgeGap, ANCHOR_SNAP_M)
+        && ridgeGap <= BRIDGE_DETOUR * Math.max(trackGap, ANCHOR_SNAP_M);
+  }
+  // Different segments: the embedded route is split into 123 disjoint pieces,
+  // so a hike crossing a data boundary must still read as continuous. Only
+  // bridge where the two ends actually meet on the ground.
+  const endA = ridgeSegments[a.segIdx][a.dir < 0 ? 0 : ridgeSegments[a.segIdx].length-1];
+  const endB = ridgeSegments[b.segIdx][b.dir < 0 ? ridgeSegments[b.segIdx].length-1 : 0];
+  if (distM(endA, endB) > JUNCTION_M) return false;
+  return trackGap <= BRIDGE_MAX_M;
+}
+
+// Full match. Returns per-point projections (null where unmatched) plus the
+// on/off runs the renderer consumes, and a diagnostic breakdown of how much of
+// the result came from each stage — so an over-eager bridge is visible rather
+// than silent.
+function matchHikeToRidge(coords, index, arcs) {
+  const cum = [0];
+  for (let i = 1; i < coords.length; i++) cum[i] = cum[i-1] + distM(coords[i-1], coords[i]);
+
+  const projTight = coords.map(c => projectOntoRidge(c, ANCHOR_SNAP_M, index, arcs));
+  const spikes = repairArcSpikes(coords, projTight);
+  const anchors = seedRuns(projTight)
+    .filter(r => cum[r.end] - cum[r.start] >= ANCHOR_MIN_M);
+  const anchoredM = anchors.reduce((s, r) => s + (cum[r.end] - cum[r.start]), 0);
+
+  let grownM = 0, bridgedM = 0;
+  const matched = new Array(coords.length).fill(false);
+  const projs = new Array(coords.length).fill(null);
+
+  if (anchors.length) {
+    const projWide = coords.map(c => projectOntoRidge(c, GROW_SNAP_M, index, arcs));
+    repairArcSpikes(coords, projWide);
+    const seeds = anchors.map(r => ({ start: r.start, end: r.end })); // pre-growth spans
+    for (const r of anchors) growAnchor(r, coords, projWide);
+    // Re-derive direction from net displacement now that each run spans enough
+    // trail for the sign to mean something. Seeding has to guess from the first
+    // arc delta, which a single noisy step can flip.
+    const reface = r => { r.dir = Math.sign(r.lastArc - r.startArc) || r.dir || 1; };
+    anchors.forEach(reface);
+    // Growth both overlaps anchors and reorders them (a run grown backwards can
+    // start before one seeded earlier), so sort before the coalescing sweep,
+    // which assumes ascending starts.
+    anchors.sort((x, y) => x.start - y.start || x.end - y.end);
+    const merged = [anchors[0]];
+    for (let i = 1; i < anchors.length; i++) {
+      const prev = merged[merged.length-1], r = anchors[i];
+      if (r.start <= prev.end + 1 && r.segIdx === prev.segIdx) {
+        if (r.end > prev.end) { prev.end = r.end; prev.lastArc = r.lastArc; }
+      } else merged.push(r);
+    }
+    merged.forEach(reface);
+
+    const grownMask = new Array(coords.length).fill(false);
+    for (const r of merged) for (let j = r.start; j <= r.end; j++) grownMask[j] = true;
+    for (let i = 0; i < merged.length; i++) {
+      const r = merged[i];
+      for (let j = r.start; j <= r.end; j++) { matched[j] = true; projs[j] = projWide[j] || projTight[j]; }
+      const next = merged[i+1];
+      // projs stay null across a bridged gap: the snap fills it from the ridge.
+      if (next && canBridge(r, next, cum)) for (let j = r.end + 1; j < next.start; j++) matched[j] = true;
+    }
+    // Measure each stage as covered track length, not as a sum of per-anchor
+    // deltas — anchors grow into each other, so summing double-counts wildly
+    // (an early version reported 22 km of growth on a 15 km hike).
+    const covered = mask => {
+      let m = 0;
+      for (let i = 1; i < coords.length; i++) if (mask[i-1] && mask[i]) m += cum[i] - cum[i-1];
+      return m;
+    };
+    const seedMask = new Array(coords.length).fill(false);
+    for (const r of seeds) for (let j = r.start; j <= r.end; j++) seedMask[j] = true;
+    grownM = covered(grownMask) - covered(seedMask);
+    bridgedM = covered(matched) - covered(grownMask);
+  }
+
+  return {
+    projs, matched,
+    runs: smoothRuns(coords, matched),
+    stats: { anchors: anchors.length, anchoredM, grownM, bridgedM, spikes,
+             matchedM: anchoredM + grownM + bridgedM, totalM: cum[cum.length-1] },
+  };
 }
 
 // Collapse the raw per-point flags into runs, absorbing anything shorter than
@@ -996,18 +1314,86 @@ function smoothRuns(coords, flags) {
   return runs;
 }
 
-// Returns [{ onRidge, start, end }] over indices into h.coords, end inclusive.
-// Cached by hike id: the id is content-addressed over the coords and the ridge
-// data is static, so a result can never go stale — only orphaned, which
-// renderAll() prunes.
+// Ridge vertices strictly between two arc positions on one segment, in travel
+// order. Emitting these between consecutive snapped points is what restores
+// switchbacks instead of chording across them.
+function ridgePathBetween(segIdx, arcFrom, arcTo) {
+  const seg = ridgeSegments[segIdx], a = ridgeArcs[segIdx];
+  const lo = Math.min(arcFrom, arcTo), hi = Math.max(arcFrom, arcTo);
+  const out = [];
+  for (let i = 0; i < seg.length; i++) {
+    if (a[i] > lo && a[i] < hi) out.push({ lat: seg[i].lat, lon: seg[i].lon });
+  }
+  if (arcTo < arcFrom) out.reverse();
+  return out;
+}
+
+// Build the snapped view of a hike: matched points ride on the trail, bridged
+// gaps are filled from the trail itself, and genuinely off-trail stretches stay
+// exactly as recorded. Returns coords plus runs indexed into those coords — the
+// match's own runs index the *raw* array and don't survive the insertion of
+// ridge vertices, so the renderer needs these instead.
+//
+// A bridged gap contributes no points of its own: it is simply the stretch of
+// ridge between the projections flanking it, which the next projection emits
+// on arrival. That falls out of the same path-insertion that restores
+// switchbacks, so there is no separate gap-filling code path.
+function buildSnappedView(h) {
+  const { projs, matched } = classifyHikeAgainstRidge(h);
+  const src = h.coords;
+  const coords = [], onRidge = [];
+  let prev = null;
+  const emit = (pt, on) => { coords.push(pt); onRidge.push(on); };
+  for (let i = 0; i < src.length; i++) {
+    const pr = matched[i] ? projs[i] : null;
+    if (pr) {
+      if (prev && prev.segIdx === pr.segIdx) {
+        for (const v of ridgePathBetween(prev.segIdx, prev.arc, pr.arc)) {
+          emit({ lat: v.lat, lon: v.lon, ele: src[i].ele }, true);
+        }
+      }
+      const pt = pointAtArc(pr.segIdx, pr.arc, ridgeArcs);
+      emit({ lat: pt.lat, lon: pt.lon, ele: src[i].ele }, true);
+      prev = { segIdx: pr.segIdx, arc: pr.arc };
+    } else if (!matched[i]) {
+      emit(src[i], false);
+      prev = null; // don't draw trail across a stretch the hiker actually left
+    }
+  }
+  if (!coords.length) return { coords: src.slice(), runs: [{ onRidge: false, start: 0, end: src.length-1 }] };
+  const runs = [];
+  for (let i = 0; i < onRidge.length; i++) {
+    const last = runs[runs.length-1];
+    if (last && last.onRidge === onRidge[i]) last.end = i;
+    else runs.push({ onRidge: onRidge[i], start: i, end: i });
+  }
+  return { coords, runs };
+}
+
+function snappedView(h) {
+  let v = snappedCache.get(h.id);
+  if (!v) snappedCache.set(h.id, v = buildSnappedView(h));
+  return v;
+}
+
+// The geometry every consumer should read: snapped when the hike's toggle is
+// on, raw otherwise. Coverage, rendering and stats all go through this so they
+// can never disagree about which version of a track they are looking at.
+function hikePoints(h) {
+  return h.snapped && ensureRidgeData() ? snappedView(h).coords : h.coords;
+}
+
+// Match result for a hike: { projs, matched, runs, stats }. Cached by hike id —
+// the id is content-addressed over the coords and the ridge data is static, so
+// an entry can never go stale, only orphaned, which renderAll() prunes.
 function classifyHikeAgainstRidge(h) {
   const cached = ridgeRunsCache.get(h.id);
   if (cached) return cached;
   if (!ridgeEdgeIndex) ridgeEdgeIndex = buildRidgeEdgeIndex();
-  const flags = h.coords.map(c => isPointOnRidge(c, ridgeEdgeIndex));
-  const runs = smoothRuns(h.coords, flags);
-  ridgeRunsCache.set(h.id, runs);
-  return runs;
+  if (!ridgeArcs) ridgeArcs = buildRidgeArc();
+  const match = matchHikeToRidge(h.coords, ridgeEdgeIndex, ridgeArcs);
+  ridgeRunsCache.set(h.id, match);
+  return match;
 }
 
 // ── coverage computation ──────────────────────────────────────────
@@ -1016,7 +1402,9 @@ function recomputeCoverage() {
   // Spatial hash of hike points
   const BUCKET = 0.0005;
   const grid = new Map();
-  hikes.forEach(h => h.coords.forEach(c => {
+  // hikePoints, not h.coords: a hike with snap on is credited from its
+  // corrected geometry, which is the whole point of the toggle.
+  hikes.forEach(h => hikePoints(h).forEach(c => {
     const key = `${Math.round(c.lat/BUCKET)},${Math.round(c.lon/BUCKET)}`;
     if (!grid.has(key)) grid.set(key, []);
     grid.get(key).push(c);
@@ -1123,16 +1511,23 @@ function renderAll() {
   if (ridgeRunsCache.size > hikes.length) {
     const live = new Set(hikes.map(h => h.id));
     for (const id of ridgeRunsCache.keys()) if (!live.has(id)) ridgeRunsCache.delete(id);
+    for (const id of snappedCache.keys()) if (!live.has(id)) snappedCache.delete(id);
   }
   hikes.forEach((h,i)=>{
     h.color=COLORS[i%COLORS.length];
-    const ll=h.coords.map(c=>[c.lat,c.lon]);
+    // Snapped hikes render their corrected geometry whether or not the overlay
+    // is showing; the ridge-overlap *shading* is what the overlay gates.
+    const snapped = h.snapped && ensureRidgeData() ? snappedView(h) : null;
+    const pts = snapped ? snapped.coords : h.coords;
+    const ll=pts.map(c=>[c.lat,c.lon]);
     const bindHit = (layer) => { layer.bindPopup(popupHTML(h,i)); layer.on('click',()=>highlightSidebar(i)); };
     // With the Ridge Trail overlay on, split the track so the stretches that
     // run along the ridge stay solid and everything else fades back. Overlay
     // off = one uniform line, exactly as before.
-    if (ridgeVisible && ridgeSegments) {
-      for (const r of classifyHikeAgainstRidge(h)) {
+    if (ridgeVisible && ensureRidgeData()) {
+      // Runs must index `pts`: a snapped view has extra ridge vertices spliced
+      // in, so the match's raw-array runs would be off by a growing offset.
+      for (const r of (snapped ? snapped.runs : classifyHikeAgainstRidge(h).runs)) {
         // end+2, not end+1: carry the next run's first point so consecutive
         // runs share the edge between them and the track has no gap at the
         // transition. The last run clamps harmlessly.
@@ -1173,7 +1568,42 @@ function popupHTML(h,i){
   <div class="popup-actions">
     <button class="popup-elev-btn" onclick="showElev(${i})">↗ Elevation profile</button>
     <button class="popup-del-btn" onclick="deleteHike(${i})" title="Delete hike" aria-label="Delete hike">🗑</button>
-  </div>`;
+  </div>
+  <div class="popup-actions tight">
+    <button class="popup-snap-btn${h.snapped ? ' on' : ''}" onclick="toggleSnap(${i})"
+      aria-pressed="${h.snapped ? 'true' : 'false'}">${h.snapped ? '✓ Snapped to trail' : '⇥ Snap to trail'}</button>
+  </div>
+  <div class="popup-snap-note">${snapNote(h)}</div>`;
+}
+
+// What the snap did, in one line under the button. Bridged metres are called
+// out separately because that is the inferred part — the stretch the match
+// asserts from continuity rather than from the recording — and an over-eager
+// bridge should be visible rather than silent.
+function snapNote(h) {
+  if (!ensureRidgeData()) return '';
+  const s = classifyHikeAgainstRidge(h).stats;
+  if (!s.anchors) return 'no Ridge Trail match';
+  const pct = Math.round(100 * s.matchedM / Math.max(s.totalM, 1));
+  const note = `${pct}% matched to Ridge Trail`;
+  return s.bridgedM >= 1
+    ? `${note} · ${Math.round(s.bridgedM)} m inferred across gaps`
+    : note;
+}
+
+function toggleSnap(i) {
+  const h = hikes[i];
+  if (!h) return;
+  ensureRidgeData();
+  if (!h.snapped && !classifyHikeAgainstRidge(h).stats.anchors) {
+    alert('No part of this hike matches the Ridge Trail closely enough to snap to it.');
+    return;
+  }
+  // Stored in meta, so it rides the existing update-hike path and syncs to
+  // other devices like any other editable field. applyOp re-materializes and
+  // re-renders; close the popup first because the hike's index can move.
+  map.closePopup();
+  applyOp('update-hike', h.id, { meta: { snapped: !h.snapped } });
 }
 
 function highlightSidebar(i){
@@ -1913,9 +2343,12 @@ function onOpsMerged(mergedOps) {
 // ops already absorbed by the snapshot (which is how per-device files
 // shrink over time).
 function getDeviceOps() {
-  return ops.filter(op =>
+  // Collapse here too, not just in localStorage: otherwise every toggle press
+  // still lands in this device's file on GitHub even though only the last one
+  // can affect replay.
+  return collapseOwnUpdates(ops.filter(op =>
     op.deviceId === deviceId && !isOpCoveredBySnapshot(op, snapshot)
-  );
+  ));
 }
 
 // ── State bridge to the sync-glue module block ────────────────────
@@ -1951,6 +2384,7 @@ window.closeHikeList = closeHikeList;
 window.showElev = showElev;
 window.closeElev = closeElev;
 window.focusHike = focusHike;
+window.toggleSnap = toggleSnap;
 window.deleteHike = deleteHike;
 window.clearAll = clearAll;
 window.locateMe = locateMe;
