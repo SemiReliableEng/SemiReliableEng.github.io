@@ -1580,7 +1580,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v39';
+const APP_VERSION = 'marginalia-v40';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -2762,6 +2762,7 @@ window.requestPersistent = async () => {
 
 // ── Gemini OCR ──
 const GEMINI_SETTINGS_KEY = 'marginalia_gemini_key';
+const GEMINI_MODEL = 'gemini-3.7-flash';
 
 function loadGeminiKey() {
   return localStorage.getItem(GEMINI_SETTINGS_KEY) || '';
@@ -2783,7 +2784,7 @@ async function saveGeminiSettings() {
   msg.textContent = 'Testing key…';
 
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${encodeURIComponent(key)}`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts: [{ text: 'Reply with just the word OK.' }] }] })
@@ -2922,7 +2923,7 @@ async function ocrWithGemini(file) {
   const key = loadGeminiKey();
   if (!key) throw new Error('Gemini API key not configured');
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${encodeURIComponent(key)}`, {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -3868,7 +3869,7 @@ async function transcribeWithGemini(samples) {
   const key = loadGeminiKey();
   if (!key) throw new Error('Gemini API key not configured');
   const base64 = bytesToBase64(encodeWav(samples, TARGET_SAMPLE_RATE));
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${encodeURIComponent(key)}`, {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
