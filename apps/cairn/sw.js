@@ -11,8 +11,8 @@
 //   TILES_CACHE       — runtime + trail-prefetched tiles. Survives shell bumps
 //                       so the page-side prefetch (z10-15 along Ridge Trail +
 //                       imported hikes) doesn't get wiped on every UI release.
-const CACHE = 'cairn-v28';
-const BASE_TILES_CACHE = 'cairn-tiles-base-v1';
+const CACHE = 'cairn-v29';
+const BASE_TILES_CACHE = 'cairn-tiles-base-v2';
 const TILES_CACHE = 'cairn-tiles-v1';
 
 // App shell + local assets precached on install. Relative URLs so this
@@ -47,9 +47,11 @@ const CDN_HOSTS = new Set([
   'fonts.gstatic.com',
 ]);
 
-// CartoDB basemap tiles — runtime fetches go to TILES_CACHE so they survive
+// Esri World Topographic basemap tiles — runtime fetches go to TILES_CACHE so they survive
 // app-shell version bumps.
 const TILE_HOSTS = new Set([
+  'server.arcgisonline.com',
+  'services.arcgisonline.com',
   'a.basemaps.cartocdn.com',
   'b.basemaps.cartocdn.com',
   'c.basemaps.cartocdn.com',
@@ -58,13 +60,9 @@ const TILE_HOSTS = new Set([
 
 // ── base-tile precache list (z6-11 over Bay Area bbox) ────────────────
 // Generated deterministically at SW load so the URL set lives next to the
-// bbox/zoom params it's derived from. Both retina and non-retina variants
-// are included because the SW can't read devicePixelRatio reliably; the
-// cache cost is small (~3 MB × 2). Subdomain matches Leaflet's
-// `(x + y) % subs.length` rule so prefetched URLs hit at runtime.
+// bbox/zoom params it's derived from.
 const BASE_TILES = (() => {
   const bbox = { minLat: 36.8, maxLat: 38.5, minLon: -123.5, maxLon: -121.5 };
-  const subs = ['a', 'b', 'c', 'd'];
   const urls = [];
   const lonToX = (lon, z) => Math.floor((lon + 180) / 360 * (1 << z));
   const latToY = (lat, z) => {
@@ -78,10 +76,7 @@ const BASE_TILES = (() => {
     const y1 = latToY(bbox.minLat, z);
     for (let x = x0; x <= x1; x++) {
       for (let y = y0; y <= y1; y++) {
-        const sub = subs[Math.abs(x + y) % subs.length];
-        for (const r of ['', '@2x']) {
-          urls.push(`https://${sub}.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}${r}.png`);
-        }
+        urls.push(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/${z}/${y}/${x}`);
       }
     }
   }

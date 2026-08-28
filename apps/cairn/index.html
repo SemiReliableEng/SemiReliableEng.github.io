@@ -429,16 +429,7 @@
         <div class="settings-section-title">Basemap</div>
         <div class="settings-card">
           <div class="settings-hint">
-            Cairn renders CartoDB Voyager basemap tiles. CARTO requires a free API key to remove the "API KEY REQUIRED" watermark. Request a key at
-            <a href="https://carto.com/basemaps/apikey" target="_blank" rel="noopener">carto.com/basemaps/apikey</a>.
-          </div>
-          <div class="field-group">
-            <div class="field-label">CartoDB Basemap API Key</div>
-            <input class="text-input" id="carto-api-key" type="text" placeholder="Enter CARTO API key" autocorrect="off" autocapitalize="off" spellcheck="false"/>
-          </div>
-          <button class="btn-primary" onclick="saveCartoSettings()">Save API Key</button>
-          <div id="carto-status-row" style="display:none;margin-top:10px;">
-            <div class="settings-hint" id="carto-status-msg"></div>
+            Cairn renders <strong>Esri World Topographic</strong> basemap tiles with multi-directional shaded terrain relief and topographic elevation contours. No API key is required.
           </div>
         </div>
       </div>
@@ -562,7 +553,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v28';
+const APP_VERSION = 'cairn-v29';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -847,25 +838,10 @@ function hasHike(hikeId) {
 
 
 // ── map setup ─────────────────────────────────────────────────────
-// TODO: Support Esri World Topo basemap option (https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x})
-const CARTO_API_KEY_KEY = 'cairn_carto_api_key';
-function getCartoApiKey() {
-  return (localStorage.getItem(CARTO_API_KEY_KEY) || '').trim();
-}
-function setCartoApiKey(key) {
-  if (key) localStorage.setItem(CARTO_API_KEY_KEY, key.trim());
-  else localStorage.removeItem(CARTO_API_KEY_KEY);
-}
-function buildTileLayerUrl() {
-  const key = getCartoApiKey();
-  return `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png${key ? `?api_key=${encodeURIComponent(key)}` : ''}`;
-}
-
 const map = L.map('map', { zoomControl: false }).setView([37.7, -122.2], 9);
-const baseTileLayer = L.tileLayer(buildTileLayerUrl(), {
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-  subdomains: 'abcd',
-  maxZoom: 20
+const baseTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community',
+  maxZoom: 19
 }).addTo(map);
 map.createPane('ridgePane');
 map.getPane('ridgePane').style.zIndex = 350; // below hike layers
@@ -967,13 +943,13 @@ function buildRidgeLayer() {
   // long-distance routes (NPS, Ordnance Survey), and reads pre-attentively
   // as "official route" rather than "one more hike".
   const toLatLngs = seg => seg.map(c => [c.lat, c.lon]);
-  // Thinner than the thinnest hike-line band (short = 2.5 px) so the Ridge
-  // Trail reads as reference geography rather than competing with hikes.
+  // Barbershop pattern: white casing underneath + black dashed on top.
+  // Sized at 2px (+1px thicker than original) with 3px white casing for clean contrast.
   const baseLines = ridgeSegments.map(seg =>
-    L.polyline(toLatLngs(seg), { color:'#ffffff', weight:2, opacity:1, pane:'ridgePane' })
+    L.polyline(toLatLngs(seg), { color:'#ffffff', weight:3, opacity:1, pane:'ridgePane' })
   );
   const topLines = ridgeSegments.map(seg =>
-    L.polyline(toLatLngs(seg), { color:'#1a1a1a', weight:1, opacity:1, dashArray:'5 5', pane:'ridgePane' })
+    L.polyline(toLatLngs(seg), { color:'#1a1a1a', weight:2, opacity:1, dashArray:'5 5', pane:'ridgePane' })
   );
   ridgeLayer = L.layerGroup([...baseLines, ...topLines]);
   ridgeLayer.addTo(map);
@@ -1912,13 +1888,8 @@ function latToTileY(lat, z) {
 function tileWidthM(z) {
   return 40075016.686 / (1 << z);
 }
-function tileSubdomain(x, y) {
-  return TILE_SUBDOMAINS[Math.abs(x + y) % TILE_SUBDOMAINS.length];
-}
 function tileUrl(z, x, y) {
-  const key = getCartoApiKey();
-  const q = key ? `?api_key=${encodeURIComponent(key)}` : '';
-  return `https://${tileSubdomain(x, y)}.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}${TILE_RETINA_SUFFIX}.png${q}`;
+  return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/${z}/${y}/${x}`;
 }
 
 function metersBetween(aLat, aLon, bLat, bLon) {
@@ -2429,9 +2400,6 @@ window.tileClearCache = tileClearCache;
 window.refreshTileStatus = refreshTileStatus;
 window.updateTilePauseBtn = updatePauseBtn;
 window.tilePrefetchEnabled = tileEnabled;
-window.getCartoApiKey = getCartoApiKey;
-window.setCartoApiKey = setCartoApiKey;
-window.buildTileLayerUrl = buildTileLayerUrl;
 window.baseTileLayer = baseTileLayer;
 renderLocateLog();
 requestPersistentStorage();
@@ -2779,35 +2747,12 @@ tilePrefetchSchedule();
   window.cairnSync = sync;
 
   // ── settings modal + handlers ────────────────────────────────────
-  window.saveCartoSettings = () => {
-    const input = document.getElementById('carto-api-key');
-    const key = (input ? input.value : '').trim();
-    if (window.setCartoApiKey) window.setCartoApiKey(key);
-    if (window.baseTileLayer && window.buildTileLayerUrl) {
-      window.baseTileLayer.setUrl(window.buildTileLayerUrl());
-    }
-    const row = document.getElementById('carto-status-row');
-    const msg = document.getElementById('carto-status-msg');
-    if (row && msg) {
-      msg.textContent = key
-        ? '✓ CARTO API key saved. New tiles will use this key.'
-        : 'CARTO API key cleared.';
-      msg.style.color = 'var(--ink-soft)';
-      row.style.display = 'block';
-    }
-  };
-
   window.openSettings = () => {
     const s = getSettings() || {};
     document.getElementById('gh-username').value = s.username || '';
     document.getElementById('gh-repo').value = s.repo || 'personal-data';
     document.getElementById('gh-token').value = s.token || '';
     document.getElementById('gh-status-row').style.display = 'none';
-
-    const cartoInput = document.getElementById('carto-api-key');
-    if (cartoInput) cartoInput.value = window.getCartoApiKey ? window.getCartoApiKey() : '';
-    const cartoStatusRow = document.getElementById('carto-status-row');
-    if (cartoStatusRow) cartoStatusRow.style.display = 'none';
 
     // Sync the Offline Tiles section to whatever the prefetch state is now.
     const tileCb = document.getElementById('tile-prefetch-checkbox');
