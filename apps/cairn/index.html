@@ -148,7 +148,7 @@
   /* Stats chip — floats over the map bottom-left; replaces the sidebar stats
      strip and the old Ridge Trail coverage panel. Collapsed by default;
      tap to expand into a card with per-stat rows + the coverage bar. */
-  #stats-chip{position:absolute;left:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:600;background:var(--md-surface-container-highest);border:1px solid var(--border);border-radius:var(--md-shape-full);box-shadow:0 2px 8px var(--shadow);font-family:var(--mono);display:none;max-width:calc(100% - 24px);overflow:hidden;}
+  #stats-chip{position:absolute;left:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:1001;background:var(--md-surface-container-highest);border:1px solid var(--border);border-radius:var(--md-shape-full);box-shadow:0 2px 8px var(--shadow);font-family:var(--mono);display:none;max-width:calc(100% - 24px);overflow:hidden;}
   #stats-chip.visible{display:block;}
   #stats-chip.expanded{border-radius:var(--md-shape-md);}
   .chip-collapsed{padding:7px 14px;cursor:pointer;user-select:none;display:block;}
@@ -174,7 +174,7 @@
 
   /* Locate button — floats over the map bottom-right; mirrors the stats
      chip's bottom offsets so it clears mobile browser chrome the same way. */
-  #locate-btn{position:absolute;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:600;width:44px;height:44px;background:var(--md-surface-container-highest);border:1px solid var(--border);border-radius:var(--md-shape-full);box-shadow:0 2px 8px var(--shadow);color:var(--accent);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,opacity .15s;}
+  #locate-btn{position:absolute;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:1001;width:44px;height:44px;background:var(--md-surface-container-highest);border:1px solid var(--border);border-radius:var(--md-shape-full);box-shadow:0 2px 8px var(--shadow);color:var(--accent);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,opacity .15s;}
   #locate-btn:hover{background:var(--md-surface-container-high);}
   #locate-btn:disabled{opacity:.55;cursor:wait;}
   #locate-btn svg{width:22px;height:22px;}
@@ -185,6 +185,12 @@
     0%   {box-shadow:0 0 0 0 rgba(25,118,210,.55);}
     70%  {box-shadow:0 0 0 14px rgba(25,118,210,0);}
     100% {box-shadow:0 0 0 0 rgba(25,118,210,0);}
+  }
+
+  /* Attribution control styling: keep it compact on mobile so it doesn't span across the screen */
+  .leaflet-control-attribution{max-width:45vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;}
+  @media (min-width: 900px) {
+    .leaflet-control-attribution{max-width:60vw;}
   }
 
   .leaflet-popup-content-wrapper{background:var(--md-surface-container-low);border:none;border-radius:var(--md-shape-lg);box-shadow:var(--md-elevation-3);font-family:var(--sans);padding:4px;}
@@ -429,7 +435,7 @@
         <div class="settings-section-title">Basemap</div>
         <div class="settings-card">
           <div class="settings-hint">
-            Cairn renders <strong>Esri World Topographic</strong> basemap tiles with multi-directional shaded terrain relief and topographic elevation contours. No API key is required.
+            Cairn renders <strong>Esri World Topographic</strong> basemap tiles with multi-directional shaded terrain relief and topographic elevation contours. Sources: Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China, and the GIS User Community. No API key is required.
           </div>
         </div>
       </div>
@@ -553,7 +559,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v29';
+const APP_VERSION = 'cairn-v30';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -840,7 +846,7 @@ function hasHike(hikeId) {
 // ── map setup ─────────────────────────────────────────────────────
 const map = L.map('map', { zoomControl: false }).setView([37.7, -122.2], 9);
 const baseTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
-  attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community',
+  attribution: 'Tiles &copy; <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a> &mdash; Esri, USGS, GIS Community',
   maxZoom: 19
 }).addTo(map);
 map.createPane('ridgePane');
