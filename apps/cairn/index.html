@@ -432,10 +432,21 @@
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">Basemap</div>
+        <div class="settings-section-title">Offline Tiles</div>
         <div class="settings-card">
-          <div class="settings-hint">
-            Cairn renders <strong>Esri World Topographic</strong> basemap tiles with multi-directional shaded terrain relief and topographic elevation contours. Sources: Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China, and the GIS User Community. No API key is required.
+          <div class="settings-hint">Map tiles around the Bay Area Ridge Trail and your imported hikes are cached for offline use (z10-15). Caching pauses on slow or metered connections.</div>
+          <div class="display-row">
+            <span class="display-row-label">Auto-cache trail tiles</span>
+            <label class="ridge-toggle" for="tile-prefetch-checkbox">
+              <input type="checkbox" id="tile-prefetch-checkbox" onchange="togglePrefetchEnabled(this.checked)"/>
+              <span class="ridge-pill"></span>
+            </label>
+          </div>
+          <div class="sync-log" id="tile-status" style="margin-top:10px">—</div>
+          <div class="settings-row">
+            <button class="btn-secondary" id="tile-pause-btn" onclick="tilePrefetchPauseToggle()">Pause</button>
+            <button class="btn-secondary" onclick="tilePrefetchForce()">Force re-cache</button>
+            <button class="btn-secondary" onclick="tileClearCache()">Clear cache</button>
           </div>
         </div>
       </div>
@@ -478,26 +489,6 @@
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">Offline Tiles</div>
-        <div class="settings-card">
-          <div class="settings-hint">Map tiles around the Bay Area Ridge Trail and your imported hikes are cached for offline use (z10-15). Caching pauses on slow or metered connections.</div>
-          <div class="display-row">
-            <span class="display-row-label">Auto-cache trail tiles</span>
-            <label class="ridge-toggle" for="tile-prefetch-checkbox">
-              <input type="checkbox" id="tile-prefetch-checkbox" onchange="togglePrefetchEnabled(this.checked)"/>
-              <span class="ridge-pill"></span>
-            </label>
-          </div>
-          <div class="sync-log" id="tile-status" style="margin-top:10px">—</div>
-          <div class="settings-row">
-            <button class="btn-secondary" id="tile-pause-btn" onclick="tilePrefetchPauseToggle()">Pause</button>
-            <button class="btn-secondary" onclick="tilePrefetchForce()">Force re-cache</button>
-            <button class="btn-secondary" onclick="tileClearCache()">Clear cache</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-section">
         <div class="settings-section-title">Location</div>
         <div class="settings-card">
           <div class="sync-log" id="locate-log">No location activity yet.</div>
@@ -510,6 +501,15 @@
           <div class="settings-hint">Ask the browser to mark this site's storage as persistent. Without this, browsers can evict your local data (token, op-log cache, hikes) under storage pressure or low engagement. The version line below shows the current state. Click here from inside the installed PWA — Chrome's auto-grant heuristic looks for a user gesture.</div>
           <button class="btn-secondary" onclick="requestPersistent()" id="btn-request-persistent">Request persistent storage</button>
           <div class="settings-hint" id="persist-status" style="margin-top:8px;display:none"></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Basemap</div>
+        <div class="settings-card">
+          <div class="settings-hint">
+            Cairn renders <strong>Esri World Topographic</strong> basemap tiles with multi-directional shaded terrain relief and topographic elevation contours. Sources: Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China, and the GIS User Community. No API key is required.
+          </div>
         </div>
       </div>
 
@@ -559,7 +559,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v30';
+const APP_VERSION = 'cairn-v31';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
