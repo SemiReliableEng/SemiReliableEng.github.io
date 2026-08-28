@@ -1580,7 +1580,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v40';
+const APP_VERSION = 'marginalia-v41';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -2793,8 +2793,8 @@ async function saveGeminiSettings() {
       msg.textContent = '✓ Key is valid!';
       updateSettingsFields();
     } else {
-      const err = await res.json();
-      msg.textContent = `✗ Error: ${err.error?.message || 'Invalid key'}`;
+      const err = await res.json().catch(() => ({}));
+      msg.textContent = `✗ Error: ${err.error?.message || `HTTP ${res.status}`}`;
       saveGeminiKey('');
     }
   } catch(e) {
@@ -2935,15 +2935,15 @@ async function ocrWithGemini(file) {
   });
 
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || 'Gemini API error');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Gemini API error (HTTP ${res.status})`);
   }
 
   const data = await res.json();
   console.log('Gemini response:', JSON.stringify(data, null, 2));
   const parts = data.candidates?.[0]?.content?.parts || [];
-  const textPart = parts.find(p => p.text && !p.thought);
-  return textPart?.text?.trim();
+  const text = parts.filter(p => p.text && !p.thought).map(p => p.text).join('\n');
+  return text.trim();
 }
 
 function cleanOCRText(raw) {
@@ -3885,8 +3885,8 @@ async function transcribeWithGemini(samples) {
   }
   const data = await res.json();
   const parts = data.candidates?.[0]?.content?.parts || [];
-  const textPart = parts.find(p => p.text && !p.thought);
-  return (textPart?.text || '').trim();
+  const text = parts.filter(p => p.text && !p.thought).map(p => p.text).join(' ');
+  return text.trim();
 }
 
 // Chunked to avoid a call-stack overflow from spreading a large byte array.

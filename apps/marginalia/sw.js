@@ -1,5 +1,5 @@
 // Marginalia Service Worker
-const CACHE = 'marginalia-v40';
+const CACHE = 'marginalia-v41';
 
 // First-party app shell. Fetched with cache:'reload' on install (see below).
 const APP_SHELL = [
@@ -95,13 +95,17 @@ self.addEventListener('activate', e => {
 
 // Fetch: network-first for API calls, cache-first for assets
 self.addEventListener('fetch', e => {
+  // Non-GET requests (e.g. Gemini POST) should bypass the SW entirely
+  if (e.request.method !== 'GET') return;
+
   const url = new URL(e.request.url);
 
-  // Always go to network for GitHub API and Google Books API
+  // Always go to network for GitHub API, Google Books API, and Gemini API
   if (url.hostname === 'api.github.com' ||
       url.hostname === 'www.googleapis.com' ||
       url.hostname === 'openlibrary.org' ||
-      url.hostname === 'covers.openlibrary.org') {
+      url.hostname === 'covers.openlibrary.org' ||
+      url.hostname === 'generativelanguage.googleapis.com') {
     e.respondWith(fetch(e.request).catch(() => new Response('', { status: 503 })));
     return;
   }
