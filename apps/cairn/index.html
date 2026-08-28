@@ -559,7 +559,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v31';
+const APP_VERSION = 'cairn-v32';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -1819,14 +1819,14 @@ function locateMe() {
 }
 
 // ── offline-tile prefetch ─────────────────────────────────────────
-// Caches CartoDB Voyager tiles around the Ridge Trail and imported hikes
+// Caches Esri World Topographic tiles around the Ridge Trail and imported hikes
 // at z10-15 so the map still renders on-trail when offline. Kicks off
 // automatically on boot (after a short idle delay) and resumes from
 // where it left off on reload — the cache itself is the progress state,
 // so no separate progress key is needed.
 //
 // Cache layout (matches sw.js):
-//   cairn-tiles-base-v1  — z6-11 Bay Area, precached on SW install
+//   cairn-tiles-base-v2  — z6-11 Bay Area, precached on SW install
 //   cairn-tiles-v1       — z10-15 trail buffer + any runtime tile fetches
 const TILES_CACHE = 'cairn-tiles-v1';
 const TILE_PREFETCH_ENABLED_KEY = 'cairn_tile_prefetch_enabled';
@@ -1834,7 +1834,7 @@ const TILE_BYTES_KEY = 'cairn_tile_bytes_cached';
 // z10 covers context, z15 is "see which fork to take" detail. Each step up
 // roughly quadruples tile count; z16 would push the total past 250 MB.
 const TILE_PREFETCH_ZOOMS = [10, 11, 12, 13, 14, 15];
-// Concurrency kept modest so the prefetch is polite to CartoDB and doesn't
+// Concurrency kept modest so the prefetch is polite to tile servers and doesn't
 // starve the user's own map fetches when they pan around mid-prefetch.
 const TILE_FETCH_CONCURRENCY = 3;
 const TILE_PREFETCH_DELAY_MS = 5000;
@@ -2036,9 +2036,8 @@ async function tilePrefetchRun({ force = false } = {}) {
         try {
           const res = await fetch(url, { mode: 'cors' });
           if (res.ok) {
-            // Estimate size from Content-Length when present; CartoDB sets
-            // it. Fallback is a rough average so the byte counter still
-            // moves on responses without the header.
+            // Estimate size from Content-Length when present. Fallback is a
+            // rough average so the byte counter still moves on responses without the header.
             const len = Number(res.headers.get('content-length')) || 20000;
             await cache.put(url, res.clone());
             bytes += len;
