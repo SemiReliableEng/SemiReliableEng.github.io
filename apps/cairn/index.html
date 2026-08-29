@@ -569,7 +569,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v33';
+const APP_VERSION = 'cairn-v34';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -889,6 +889,107 @@ function distToSegM(p, a, b) {
   return Math.hypot(px - t*bx, py - t*by);
 }
 
+// ── Trailing Vehicle Auto-Trim ────────────────────────────────────
+// Detects and trims unfeasible high-speed trailing movement (e.g. forgotten stop after a hike)
+// with stationary dwell near the trailhead prior to vehicle departure.
+function trimTrailingVehicle(pts) {
+  const n = pts.length;
+  if (n < 15) return { coords: pts, trimmedKm: 0 };
+  if (!pts[0].timeMs || !pts[n - 1].timeMs) return { coords: pts, trimmedKm: 0 };
+
+  const V_CAR_MPS = 18.0 / 3.6;          // 18 km/h = 5.0 m/s (~11.2 mph)
+  const V_STATIONARY_MPS = 2.5 / 3.6;    // 2.5 km/h = ~0.69 m/s (~1.5 mph)
+  const MAX_START_PROXIMITY_M = 300.0;   // 300 m radius from start
+  const MAX_SEARCH_TIME_MS = 3600 * 1000;// 1 hour
+  const MIN_CAR_DIST_M = 200.0;          // at least 200 m driving in tail
+
+  const stepDists = new Float64Array(n);
+  const stepDts = new Float64Array(n);
+  const stepSpeeds = new Float64Array(n);
+  for (let i = 1; i < n; i++) {
+    const d = distM(pts[i - 1], pts[i]);
+    const dt = Math.max(0.1, ((pts[i].timeMs || 0) - (pts[i - 1].timeMs || 0)) / 1000);
+    stepDists[i] = d;
+    stepDts[i] = dt;
+    stepSpeeds[i] = d / dt;
+  }
+
+  const smoothedSpeeds = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const t0 = pts[i].timeMs || 0;
+    let wDist = 0;
+    let wDt = 0;
+    for (let j = Math.max(0, i - 20); j < Math.min(n, i + 21); j++) {
+      if (j > 0 && Math.abs((pts[j].timeMs || 0) - t0) <= 7500) {
+        wDist += stepDists[j];
+        wDt += stepDts[j];
+      }
+    }
+    smoothedSpeeds[i] = wDt > 0 ? (wDist / wDt) : stepSpeeds[i];
+  }
+
+  const tEnd = pts[n - 1].timeMs || 0;
+  let accumTailDist = 0;
+  let highSpeedDist = 0;
+  let onsetIdx = -1;
+
+  for (let i = n - 1; i > 0; i--) {
+    if ((tEnd - (pts[i].timeMs || 0)) > MAX_SEARCH_TIME_MS) break;
+    accumTailDist += stepDists[i];
+    const speed = smoothedSpeeds[i];
+    if (speed >= V_CAR_MPS) {
+      highSpeedDist += stepDists[i];
+      onsetIdx = i;
+    } else {
+      if (onsetIdx !== -1 && highSpeedDist >= MIN_CAR_DIST_M) {
+        break;
+      } else if (onsetIdx === -1 && accumTailDist > 500) {
+        return { coords: pts, trimmedKm: 0 };
+      }
+    }
+  }
+
+  if (onsetIdx === -1 || highSpeedDist < MIN_CAR_DIST_M) {
+    return { coords: pts, trimmedKm: 0 };
+  }
+
+  const startPt = pts[0];
+  const tOnset = pts[onsetIdx].timeMs || 0;
+  let bestDwellIdx = -1;
+  let minDistToStart = Infinity;
+
+  for (let i = onsetIdx; i >= 0; i--) {
+    if ((tOnset - (pts[i].timeMs || 0)) > MAX_SEARCH_TIME_MS) break;
+    const dStart = distM(startPt, pts[i]);
+    const speed = stepSpeeds[i];
+
+    if (speed <= V_STATIONARY_MPS || stepDists[i] < 2.0) {
+      if (dStart <= MAX_START_PROXIMITY_M) {
+        bestDwellIdx = i;
+        break;
+      } else if (dStart < minDistToStart) {
+        minDistToStart = dStart;
+        bestDwellIdx = i;
+      }
+    }
+  }
+
+  const cutIdx = bestDwellIdx !== -1 ? bestDwellIdx : onsetIdx;
+  if (cutIdx <= 5 || cutIdx >= n - 1) {
+    return { coords: pts, trimmedKm: 0 };
+  }
+
+  let trimmedMeters = 0;
+  for (let i = cutIdx + 1; i < n; i++) {
+    trimmedMeters += stepDists[i];
+  }
+
+  return {
+    coords: pts.slice(0, cutIdx + 1),
+    trimmedKm: trimmedMeters / 1000,
+  };
+}
+
 // ── GPX parsing ───────────────────────────────────────────────────
 function parseGPX(text, filename) {
   const xml = new DOMParser().parseFromString(text, 'text/xml');
@@ -898,15 +999,27 @@ function parseGPX(text, filename) {
   if (te) { const d=new Date(te.textContent); if(!isNaN(d)) date=d.toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}); }
   const pts = Array.from(xml.querySelectorAll('trkpt'));
   if (!pts.length) return null;
-  const coords = pts.map(p=>({
+  const rawCoords = pts.map(p=>({
     lat: parseFloat(p.getAttribute('lat')),
     lon: parseFloat(p.getAttribute('lon')),
-    ele: parseFloat(p.querySelector('ele')?.textContent||0)
+    ele: parseFloat(p.querySelector('ele')?.textContent||0),
+    timeMs: p.querySelector('time') ? Date.parse(p.querySelector('time').textContent) : NaN
   })).filter(c=>!isNaN(c.lat)&&!isNaN(c.lon));
+  if (rawCoords.length < 2) return null;
+
+  const { coords, trimmedKm } = trimTrailingVehicle(rawCoords);
   if (coords.length < 2) return null;
+
   let distKm=0; for(let i=1;i<coords.length;i++) distKm+=haversine(coords[i-1],coords[i]);
   let elevGain=0; for(let i=1;i<coords.length;i++){const d=coords[i].ele-coords[i-1].ele;if(d>0)elevGain+=d;}
-  return { name, date, coords, distKm:Math.round(distKm*10)/10, elevGain:Math.round(elevGain) };
+  return {
+    name,
+    date,
+    coords: coords.map(c => ({ lat: c.lat, lon: c.lon, ele: c.ele })),
+    distKm: Math.round(distKm*10)/10,
+    elevGain: Math.round(elevGain),
+    trimmedKm: trimmedKm > 0 ? Math.round(trimmedKm*10)/10 : 0
+  };
 }
 
 // Ridge Trail data is embedded as RIDGE_STATIC (see top of script)
@@ -2315,6 +2428,9 @@ async function loadFiles(files){
   for (const { text, name } of results) {
     const h = parseGPX(text, name);
     if (!h) continue;
+    if (h.trimmedKm) {
+      console.log(`cairn: auto-trimmed ${h.trimmedKm} km trailing driving segment from ${h.name}`);
+    }
     const id = await computeHikeId(h.coords);
     if (hasHike(id) || seenIds.has(id)) { skipped++; continue; }
     seenIds.add(id);
@@ -2569,6 +2685,8 @@ window.tilePrefetchEnabled = tileEnabled;
 window.baseTileLayer = baseTileLayer;
 window.formatGoogleMapsUrl = formatGoogleMapsUrl;
 window.showCoordPopup = showCoordPopup;
+window.parseGPX = parseGPX;
+window.trimTrailingVehicle = trimTrailingVehicle;
 renderLocateLog();
 requestPersistentStorage();
 refreshTileStatus();
