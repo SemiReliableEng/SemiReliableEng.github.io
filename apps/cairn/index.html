@@ -97,7 +97,7 @@
 
   main{flex:1;display:flex;overflow:hidden;position:relative;}
   #map-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;}
-  #map{flex:1;background:var(--md-surface-container);}
+  #map{flex:1;background:var(--md-surface-container);-webkit-touch-callout:none;user-select:none;}
 
   #elev-panel{height:0;overflow:hidden;background:var(--md-surface-container-low);border-top:1px solid var(--border);transition:height .3s var(--md-motion-standard);flex-shrink:0;}
   #elev-panel.open{height:calc(160px + env(safe-area-inset-bottom));}
@@ -192,6 +192,16 @@
   @media (min-width: 900px) {
     .leaflet-control-attribution{max-width:60vw;}
   }
+
+  /* Coordinate chip popup (click-and-hold / right-click) */
+  .coord-popup .leaflet-popup-content-wrapper{background:var(--md-surface-container-highest);border:1px solid var(--border);border-radius:var(--md-shape-full);box-shadow:0 3px 12px var(--shadow);padding:0;overflow:hidden;}
+  .coord-popup .leaflet-popup-content{margin:0;line-height:1;}
+  .coord-popup .leaflet-popup-tip{background:var(--md-surface-container-highest);box-shadow:0 2px 6px var(--shadow);}
+  .coord-pill{display:flex;align-items:center;gap:8px;padding:5px 6px 5px 12px;font-family:var(--mono);white-space:nowrap;}
+  .coord-pill-text{font-size:11px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;user-select:all;}
+  .coord-pill-link{display:inline-flex;align-items:center;gap:4px;background:var(--md-primary);color:var(--md-on-primary);padding:5px 10px;border-radius:var(--md-shape-full);font-family:var(--sans);font-size:11px;font-weight:500;text-decoration:none;line-height:1;transition:background .15s,opacity .15s;}
+  .coord-pill-link:hover{background:var(--md-on-primary-container);color:#fff;}
+  .coord-pill-link svg{width:11px;height:11px;flex-shrink:0;}
 
   .leaflet-popup-content-wrapper{background:var(--md-surface-container-low);border:none;border-radius:var(--md-shape-lg);box-shadow:var(--md-elevation-3);font-family:var(--sans);padding:4px;}
   .leaflet-popup-tip{background:var(--md-surface-container-low);}
@@ -423,7 +433,7 @@
           <div class="display-row">
             <span class="display-row-label">Bay Area Ridge Trail</span>
             <label class="ridge-toggle" for="ridge-checkbox">
-              <input type="checkbox" id="ridge-checkbox" onchange="toggleRidgeTrail(this.checked)"/>
+              <input type="checkbox" id="ridge-checkbox" onchange="toggleRidgeTrail(this.checked)" checked/>
               <span class="ridge-pill"></span>
             </label>
           </div>
@@ -559,7 +569,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v32';
+const APP_VERSION = 'cairn-v33';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -1520,6 +1530,18 @@ function distBandClass(distKm) {
 function renderAll() {
   map.eachLayer(l=>{if(l instanceof L.Polyline||l instanceof L.CircleMarker||l instanceof L.LayerGroup) map.removeLayer(l);});
   if(ridgeVisible&&ridgeLayer) ridgeLayer.addTo(map);
+  if (coordPopup && map.hasLayer(coordPopup) && coordPopup.getLatLng()) {
+    coordMarker = L.circleMarker(coordPopup.getLatLng(), {
+      radius: 5,
+      fillColor: '#8b4513',
+      color: '#ffffff',
+      weight: 2,
+      fillOpacity: 1,
+      interactive: false,
+    }).addTo(map);
+  } else {
+    coordMarker = null;
+  }
   // Drop cached ridge-overlap runs for hikes that no longer exist. Bounded and
   // cheap; the cache is otherwise write-once per hike id.
   if (ridgeRunsCache.size > hikes.length) {
@@ -1534,7 +1556,13 @@ function renderAll() {
     const snapped = h.snapped && ensureRidgeData() ? snappedView(h) : null;
     const pts = snapped ? snapped.coords : h.coords;
     const ll=pts.map(c=>[c.lat,c.lon]);
-    const bindHit = (layer) => { layer.bindPopup(popupHTML(h,i)); layer.on('click',()=>highlightSidebar(i)); };
+    const bindHit = (layer) => {
+      layer.bindPopup(popupHTML(h,i));
+      layer.on('click', () => {
+        if (Date.now() < suppressClickUntil) return;
+        highlightSidebar(i);
+      });
+    };
     // With the Ridge Trail overlay on, split the track so the stretches that
     // run along the ridge stay solid and everything else fades back. Overlay
     // off = one uniform line, exactly as before.
@@ -1818,6 +1846,63 @@ function locateMe() {
   );
 }
 
+// ── coordinate chip (click-and-hold / right-click) ────────────────
+let coordMarker = null;
+let coordPopup = null;
+let suppressClickUntil = 0;
+
+function formatGoogleMapsUrl(lat, lon) {
+  return `https://www.google.com/maps/search/?api=1&query=${Number(lat).toFixed(6)},${Number(lon).toFixed(6)}`;
+}
+
+function showCoordPopup(latlng) {
+  if (!latlng || typeof latlng.lat !== 'number' || typeof latlng.lng !== 'number') return;
+  const lat = latlng.lat;
+  const lng = latlng.lng;
+  const gmapsUrl = formatGoogleMapsUrl(lat, lng);
+  const coordText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+  if (coordMarker) {
+    map.removeLayer(coordMarker);
+    coordMarker = null;
+  }
+
+  coordMarker = L.circleMarker([lat, lng], {
+    radius: 5,
+    fillColor: '#8b4513',
+    color: '#ffffff',
+    weight: 2,
+    fillOpacity: 1,
+    interactive: false,
+  }).addTo(map);
+
+  const html = `<div class="coord-pill">` +
+    `<span class="coord-pill-text">${coordText}</span>` +
+    `<a href="${gmapsUrl}" target="_blank" rel="noopener" class="coord-pill-link" title="Open in Google Maps">` +
+      `<span>Google Maps</span>` +
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>` +
+    `</a>` +
+  `</div>`;
+
+  coordPopup = L.popup({
+    className: 'coord-popup',
+    offset: [0, -6],
+    closeButton: false,
+    autoPan: true,
+  })
+  .setLatLng([lat, lng])
+  .setContent(html)
+  .openOn(map);
+
+  coordPopup.on('remove', () => {
+    if (coordMarker) {
+      map.removeLayer(coordMarker);
+      coordMarker = null;
+    }
+    coordPopup = null;
+  });
+}
+
 // ── offline-tile prefetch ─────────────────────────────────────────
 // Caches Esri World Topographic tiles around the Ridge Trail and imported hikes
 // at z10-15 so the map still renders on-trail when offline. Kicks off
@@ -1851,7 +1936,7 @@ let tileTargetCount = 0;
 let tileCachedCount = 0;
 
 function tileEnabled() {
-  return localStorage.getItem(TILE_PREFETCH_ENABLED_KEY) !== '0';
+  return localStorage.getItem(TILE_PREFETCH_ENABLED_KEY) === '1';
 }
 function setTileEnabled(on) {
   localStorage.setItem(TILE_PREFETCH_ENABLED_KEY, on ? '1' : '0');
@@ -2302,9 +2387,85 @@ document.getElementById('map').addEventListener('drop',e=>{e.preventDefault();lo
   map.on('click', () => chip.classList.remove('expanded'));
 })();
 
+// Coordinate chip: click-and-hold (pointer/touch) + instant right-click (contextmenu)
+(function wireCoordHold() {
+  const mapEl = document.getElementById('map');
+  let holdTimer = null;
+  let startX = 0;
+  let startY = 0;
+  let holdLatLng = null;
+  const HOLD_MS = 500;
+  const MOVE_THRESH = 8;
+
+  function clearTimer() {
+    if (holdTimer) {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+    }
+  }
+
+  // Prevent system context menu on the map canvas
+  mapEl.addEventListener('contextmenu', (e) => {
+    if (!e.target.closest('.modal-overlay, #sidebar')) {
+      e.preventDefault();
+    }
+  });
+
+  // Instant right-click on desktop
+  map.on('contextmenu', (e) => {
+    if (!e || !e.latlng) return;
+    if (e.originalEvent && e.originalEvent.target && e.originalEvent.target.closest('#drop-zone:not(.hidden), #locate-btn, #stats-chip, .leaflet-control, .leaflet-popup, .modal-overlay')) {
+      return;
+    }
+    showCoordPopup(e.latlng);
+  });
+
+  // Pointerdown for click-and-hold (mouse left-click, touch, stylus)
+  mapEl.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.target.closest('#drop-zone:not(.hidden), #locate-btn, #stats-chip, .leaflet-control, .leaflet-popup, .modal-overlay')) {
+      return;
+    }
+    clearTimer();
+    startX = e.clientX;
+    startY = e.clientY;
+    holdLatLng = map.mouseEventToLatLng(e);
+
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      suppressClickUntil = Date.now() + 400;
+      if (navigator.vibrate) {
+        try { navigator.vibrate(20); } catch {}
+      }
+      if (holdLatLng) showCoordPopup(holdLatLng);
+    }, HOLD_MS);
+  });
+
+  mapEl.addEventListener('pointermove', (e) => {
+    if (holdTimer) {
+      const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
+      if (dist > MOVE_THRESH) clearTimer();
+    }
+  });
+
+  mapEl.addEventListener('pointerup', clearTimer);
+  mapEl.addEventListener('pointercancel', clearTimer);
+  mapEl.addEventListener('lostpointercapture', clearTimer);
+
+  map.on('movestart zoomstart dragstart', clearTimer);
+
+  // Prevent hike popups from overriding coord popup if click occurred right after long press
+  map.on('popupopen', (e) => {
+    if (e.popup !== coordPopup && Date.now() < suppressClickUntil) {
+      map.closePopup(e.popup);
+      if (coordPopup) coordPopup.openOn(map);
+    }
+  });
+})();
+
 // ── boot ──────────────────────────────────────────────────────────
 setUnits(localStorage.getItem(UNITS_KEY) === 'metric' ? 'metric' : 'imperial');
-const ridgeInitial = localStorage.getItem(RIDGE_KEY) === '1';
+const ridgeInitial = localStorage.getItem(RIDGE_KEY) !== '0';
 document.getElementById('ridge-checkbox').checked = ridgeInitial;
 if (ridgeInitial) toggleRidgeTrail(true);
 ensureDeviceId();
@@ -2406,6 +2567,8 @@ window.refreshTileStatus = refreshTileStatus;
 window.updateTilePauseBtn = updatePauseBtn;
 window.tilePrefetchEnabled = tileEnabled;
 window.baseTileLayer = baseTileLayer;
+window.formatGoogleMapsUrl = formatGoogleMapsUrl;
+window.showCoordPopup = showCoordPopup;
 renderLocateLog();
 requestPersistentStorage();
 refreshTileStatus();
