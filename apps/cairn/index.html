@@ -206,7 +206,7 @@
   .cairn-hike-popup{margin-bottom:0 !important;}
   .cairn-hike-popup .leaflet-popup-content-wrapper{position:relative;background:var(--md-surface-container-low);border:none;border-radius:var(--md-shape-lg);box-shadow:var(--md-elevation-3);font-family:var(--sans);padding:4px;}
   .cairn-hike-popup .leaflet-popup-tip-container{display:none !important;}
-  .cairn-hike-popup .leaflet-popup-content-wrapper::after{content:'';position:absolute;width:24px;height:24px;background:var(--md-surface-container-low);z-index:0;}
+  .cairn-hike-popup .leaflet-popup-content-wrapper::after{content:'';position:absolute;width:24px;height:24px;background:var(--md-surface-container-low);z-index:0;pointer-events:none;}
   .cairn-popup-sw .leaflet-popup-content-wrapper::after{top:-12px;right:-12px;clip-path:polygon(15% 50%, 100% 0, 50% 85%, 25% 75%);filter:drop-shadow(2px -2px 3px rgba(0,0,0,0.12));}
   .cairn-popup-se .leaflet-popup-content-wrapper::after{top:-12px;left:-12px;clip-path:polygon(85% 50%, 0 0, 50% 85%, 75% 75%);filter:drop-shadow(-2px -2px 3px rgba(0,0,0,0.12));}
   .cairn-popup-nw .leaflet-popup-content-wrapper::after{bottom:-12px;right:-12px;clip-path:polygon(15% 50%, 100% 100%, 50% 15%, 25% 25%);filter:drop-shadow(2px 2px 3px rgba(0,0,0,0.12));}
@@ -575,7 +575,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v35';
+const APP_VERSION = 'cairn-v36';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -1654,9 +1654,11 @@ function distBandClass(distKm) {
 // Determines which quadrant around the anchor point is least occupied by the trail,
 // placing the popup away from the trail to avoid obscuring the path.
 function getClearestQuadrant(anchorLatLng, coords) {
+  if (!coords?.length || !anchorLatLng) return 'ne';
   const lat0 = anchorLatLng.lat;
   const lon0 = anchorLatLng.lng !== undefined ? anchorLatLng.lng : anchorLatLng.lon;
-  const cosLat0 = Math.cos(lat0 * Math.PI / 180);
+  const kx = Math.cos(lat0 * Math.PI / 180) * 111320;
+  const ky = 111320;
   let wNE = 0, wNW = 0, wSE = 0, wSW = 0;
 
   for (let i = 0; i < coords.length; i++) {
@@ -1665,8 +1667,8 @@ function getClearestQuadrant(anchorLatLng, coords) {
     const dLon = (c.lng !== undefined ? c.lng : c.lon) - lon0;
     if (Math.abs(dLat) < 1e-7 && Math.abs(dLon) < 1e-7) continue;
 
-    const dx = dLon * cosLat0 * 111320;
-    const dy = dLat * 111320;
+    const dx = dLon * kx;
+    const dy = dLat * ky;
     const dist = Math.hypot(dx, dy);
     const w = 1.0 / (dist + 50.0);
 
@@ -1682,15 +1684,14 @@ function getClearestQuadrant(anchorLatLng, coords) {
   const weights = { ne: wNE, nw: wNW, se: wSE, sw: wSW };
   const quadOrder = ['ne', 'nw', 'sw', 'se'];
 
-  let heaviest = 'ne', maxW = wNE;
-  if (wNW > maxW) { maxW = wNW; heaviest = 'nw'; }
-  if (wSE > maxW) { maxW = wSE; heaviest = 'se'; }
-  if (wSW > maxW) { maxW = wSW; heaviest = 'sw'; }
-
-  if (maxW === 0) return 'ne';
+  let heaviest = 'ne';
+  for (const q of quadOrder) {
+    if (weights[q] > weights[heaviest]) heaviest = q;
+  }
+  if (weights[heaviest] === 0) return 'ne';
 
   const idx = quadOrder.indexOf(heaviest);
-  const flank1 = quadOrder[(idx - 1 + 4) % 4];
+  const flank1 = quadOrder[(idx + 3) % 4];
   const flank2 = quadOrder[(idx + 1) % 4];
   const opposite = quadOrder[(idx + 2) % 4];
 
@@ -1706,8 +1707,8 @@ function getClearestQuadrant(anchorLatLng, coords) {
 
 const BEAK_INSET = 12;
 function computeDynamicOffset(quad, container) {
-  const w = container ? (container.offsetWidth || 240) : 240;
-  const h = container ? (container.offsetHeight || 190) : 190;
+  const w = container?.offsetWidth || 240;
+  const h = container?.offsetHeight || 190;
   const hShift = Math.round(w / 2) + BEAK_INSET;
   if (quad === 'ne') return [hShift, -BEAK_INSET];
   if (quad === 'nw') return [-hShift, -BEAK_INSET];
@@ -1731,9 +1732,13 @@ function showHikePopup(i, anchorLatLng) {
   const h = hikes[i];
   if (!h) return;
   const pts = h.snapped && ensureRidgeData() ? snappedView(h).coords : h.coords;
-  const ll = pts.map(c => [c.lat, c.lon]);
-  const anchor = anchorLatLng ? L.latLng(anchorLatLng.lat, anchorLatLng.lng !== undefined ? anchorLatLng.lng : anchorLatLng.lon) : L.latLng(ll[0][0], ll[0][1]);
-  const quad = getClearestQuadrant(anchor, pts);
+  if (!pts?.length) return;
+
+  const p0 = pts[0];
+  const anchor = anchorLatLng
+    ? L.latLng(anchorLatLng.lat, anchorLatLng.lng !== undefined ? anchorLatLng.lng : anchorLatLng.lon)
+    : L.latLng(p0.lat, p0.lng !== undefined ? p0.lng : p0.lon);
+
   const initialOpt = getQuadrantPopupOptions(anchor, pts);
 
   if (hikePopup && map.hasLayer(hikePopup)) {
@@ -1750,8 +1755,7 @@ function showHikePopup(i, anchorLatLng) {
 
   // Read actual measured popup container size to align corner and tip exactly at the anchor
   if (hikePopup._container) {
-    const dynamicOffset = computeDynamicOffset(quad, hikePopup._container);
-    hikePopup.options.offset = dynamicOffset;
+    hikePopup.options.offset = computeDynamicOffset(initialOpt.quadrant, hikePopup._container);
     hikePopup.update();
   }
 
@@ -1919,35 +1923,30 @@ function toggleSnap(i) {
 let selectedHikeIndex = null;
 function selectHike(i){
   selectedHikeIndex = (typeof i === 'number' && i >= 0 && i < hikes.length) ? i : null;
-  document.querySelectorAll('.hike-item').forEach(el=>el.classList.remove('active'));
+  document.querySelector('.hike-item.active')?.classList.remove('active');
   if (selectedHikeIndex !== null) {
     document.querySelector(`.hike-item[data-i="${selectedHikeIndex}"]`)?.classList.add('active');
   }
+  const ridgeActive = ridgeVisible && ensureRidgeData();
   hikes.forEach((h, idx) => {
     const isSelected = (idx === selectedHikeIndex);
     if (h.lines) {
       for (const item of h.lines) {
         const opacity = isSelected
           ? TRACK_OPACITY_SELECTED
-          : (ridgeVisible && ensureRidgeData() && !item.onRidge ? TRACK_OPACITY_OFF_RIDGE : TRACK_OPACITY);
+          : (ridgeActive && !item.onRidge ? TRACK_OPACITY_OFF_RIDGE : TRACK_OPACITY);
         const weight = isSelected ? TRACK_WEIGHT_SELECTED : TRACK_WEIGHT;
         item.layer.setStyle({ opacity, weight });
         if (isSelected) item.layer.bringToFront();
       }
     }
-    if (h.startMarker) {
-      h.startMarker.setStyle({
-        radius: isSelected ? START_MARKER_RADIUS_SELECTED : START_MARKER_RADIUS,
-        weight: isSelected ? 2.5 : 1.5
-      });
-      if (isSelected) h.startMarker.bringToFront();
-    }
-    if (h.endMarker) {
-      h.endMarker.setStyle({
-        radius: isSelected ? START_MARKER_RADIUS_SELECTED : START_MARKER_RADIUS,
-        weight: isSelected ? 2.5 : 1.5
-      });
-      if (isSelected) h.endMarker.bringToFront();
+    const markerRadius = isSelected ? START_MARKER_RADIUS_SELECTED : START_MARKER_RADIUS;
+    const markerWeight = isSelected ? 2.5 : 1.5;
+    for (const m of [h.startMarker, h.endMarker]) {
+      if (m) {
+        m.setStyle({ radius: markerRadius, weight: markerWeight });
+        if (isSelected) m.bringToFront();
+      }
     }
     if (isSelected && h.layer) {
       h.layer.bringToFront();
