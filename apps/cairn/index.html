@@ -203,8 +203,14 @@
   .coord-pill-link:hover{background:var(--md-on-primary-container);color:#fff;}
   .coord-pill-link svg{width:11px;height:11px;flex-shrink:0;}
 
-  .leaflet-popup-content-wrapper{background:var(--md-surface-container-low);border:none;border-radius:var(--md-shape-lg);box-shadow:var(--md-elevation-3);font-family:var(--sans);padding:4px;}
-  .leaflet-popup-tip{background:var(--md-surface-container-low);}
+  .cairn-hike-popup{margin-bottom:0 !important;}
+  .cairn-hike-popup .leaflet-popup-content-wrapper{position:relative;background:var(--md-surface-container-low);border:none;border-radius:var(--md-shape-lg);box-shadow:var(--md-elevation-3);font-family:var(--sans);padding:4px;}
+  .cairn-hike-popup .leaflet-popup-tip-container{display:none !important;}
+  .cairn-hike-popup .leaflet-popup-content-wrapper::after{content:'';position:absolute;width:24px;height:24px;background:var(--md-surface-container-low);z-index:0;}
+  .cairn-popup-sw .leaflet-popup-content-wrapper::after{top:-12px;right:-12px;clip-path:polygon(15% 50%, 100% 0, 50% 85%, 25% 75%);filter:drop-shadow(2px -2px 3px rgba(0,0,0,0.12));}
+  .cairn-popup-se .leaflet-popup-content-wrapper::after{top:-12px;left:-12px;clip-path:polygon(85% 50%, 0 0, 50% 85%, 75% 75%);filter:drop-shadow(-2px -2px 3px rgba(0,0,0,0.12));}
+  .cairn-popup-nw .leaflet-popup-content-wrapper::after{bottom:-12px;right:-12px;clip-path:polygon(15% 50%, 100% 100%, 50% 15%, 25% 25%);filter:drop-shadow(2px 2px 3px rgba(0,0,0,0.12));}
+  .cairn-popup-ne .leaflet-popup-content-wrapper::after{bottom:-12px;left:-12px;clip-path:polygon(85% 50%, 0 100%, 50% 15%, 75% 25%);filter:drop-shadow(-2px 2px 3px rgba(0,0,0,0.12));}
   .popup-name{font-family:var(--serif);font-size:16px;font-weight:600;color:var(--ink);margin-bottom:8px;max-width:200px;line-height:1.3;}
   .popup-stats{display:flex;flex-direction:column;gap:4px;}
   .popup-row{display:flex;justify-content:space-between;font-size:12px;gap:20px;padding:2px 0;}
@@ -569,7 +575,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v34';
+const APP_VERSION = 'cairn-v35';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -581,11 +587,16 @@ const SNAPSHOT_KEY = 'cairn_snapshot';
 // One-time clean-up of the pre-op-log snapshot key. Safe to leave in: no-op once removed.
 try { localStorage.removeItem('cairn-hikes-v1'); } catch {}
 const COVERAGE_M = 30;
-// Hike-line opacity when the Ridge Trail overlay is on: stretches running
-// along the ridge keep the normal solid weight, everything else drops back
-// so the eye reads "what I've covered" without losing the rest of the track.
+// Hike-line styling: unselected tracks have normal weight (3px) and opacity (0.85 on ridge,
+// 0.25 off ridge when Ridge Trail overlay is on). When a hike is selected, it becomes 100%
+// solid opacity and thicker (6px) so it is immediately distinct from all other tracks.
+const TRACK_WEIGHT = 3;
+const TRACK_WEIGHT_SELECTED = 6;
 const TRACK_OPACITY = 0.85;
 const TRACK_OPACITY_OFF_RIDGE = 0.25;
+const TRACK_OPACITY_SELECTED = 1.0;
+const START_MARKER_RADIUS = 4;
+const START_MARKER_RADIUS_SELECTED = 6;
 // Runs shorter than this collapse into their neighbour. Raw per-point
 // classification speckles badly on GPS jitter near the trail — without this
 // a single hike can shatter into hundreds of 2-point polylines.
@@ -1639,6 +1650,118 @@ function distBandClass(distKm) {
   return 'dist-4';
 }
 
+// ── Quadrant-Based Dynamic Popup Placement ────────────────────────
+// Determines which quadrant around the anchor point is least occupied by the trail,
+// placing the popup away from the trail to avoid obscuring the path.
+function getClearestQuadrant(anchorLatLng, coords) {
+  const lat0 = anchorLatLng.lat;
+  const lon0 = anchorLatLng.lng !== undefined ? anchorLatLng.lng : anchorLatLng.lon;
+  const cosLat0 = Math.cos(lat0 * Math.PI / 180);
+  let wNE = 0, wNW = 0, wSE = 0, wSW = 0;
+
+  for (let i = 0; i < coords.length; i++) {
+    const c = coords[i];
+    const dLat = c.lat - lat0;
+    const dLon = (c.lng !== undefined ? c.lng : c.lon) - lon0;
+    if (Math.abs(dLat) < 1e-7 && Math.abs(dLon) < 1e-7) continue;
+
+    const dx = dLon * cosLat0 * 111320;
+    const dy = dLat * 111320;
+    const dist = Math.hypot(dx, dy);
+    const w = 1.0 / (dist + 50.0);
+
+    if (dLat >= 0) {
+      if (dLon >= 0) wNE += w;
+      else wNW += w;
+    } else {
+      if (dLon >= 0) wSE += w;
+      else wSW += w;
+    }
+  }
+
+  const weights = { ne: wNE, nw: wNW, se: wSE, sw: wSW };
+  const quadOrder = ['ne', 'nw', 'sw', 'se'];
+
+  let heaviest = 'ne', maxW = wNE;
+  if (wNW > maxW) { maxW = wNW; heaviest = 'nw'; }
+  if (wSE > maxW) { maxW = wSE; heaviest = 'se'; }
+  if (wSW > maxW) { maxW = wSW; heaviest = 'sw'; }
+
+  if (maxW === 0) return 'ne';
+
+  const idx = quadOrder.indexOf(heaviest);
+  const flank1 = quadOrder[(idx - 1 + 4) % 4];
+  const flank2 = quadOrder[(idx + 1) % 4];
+  const opposite = quadOrder[(idx + 2) % 4];
+
+  // Prioritize the clearer of the two adjacent flanking quadrants (perpendicular to trail axis)
+  if (weights[flank1] < weights[flank2]) {
+    return flank1;
+  } else if (weights[flank2] < weights[flank1]) {
+    return flank2;
+  } else {
+    return weights[opposite] < weights[flank1] ? opposite : flank1;
+  }
+}
+
+const BEAK_INSET = 12;
+function computeDynamicOffset(quad, container) {
+  const w = container ? (container.offsetWidth || 240) : 240;
+  const h = container ? (container.offsetHeight || 190) : 190;
+  const hShift = Math.round(w / 2) + BEAK_INSET;
+  if (quad === 'ne') return [hShift, -BEAK_INSET];
+  if (quad === 'nw') return [-hShift, -BEAK_INSET];
+  if (quad === 'se') return [hShift, h + BEAK_INSET];
+  if (quad === 'sw') return [-hShift, h + BEAK_INSET];
+  return [0, 0];
+}
+
+function getQuadrantPopupOptions(anchorLatLng, coords, container) {
+  const quad = getClearestQuadrant(anchorLatLng, coords);
+  const offset = computeDynamicOffset(quad, container);
+  return {
+    quadrant: quad,
+    offset: offset,
+    className: 'cairn-hike-popup cairn-popup-' + quad
+  };
+}
+
+let hikePopup = null;
+function showHikePopup(i, anchorLatLng) {
+  const h = hikes[i];
+  if (!h) return;
+  const pts = h.snapped && ensureRidgeData() ? snappedView(h).coords : h.coords;
+  const ll = pts.map(c => [c.lat, c.lon]);
+  const anchor = anchorLatLng ? L.latLng(anchorLatLng.lat, anchorLatLng.lng !== undefined ? anchorLatLng.lng : anchorLatLng.lon) : L.latLng(ll[0][0], ll[0][1]);
+  const quad = getClearestQuadrant(anchor, pts);
+  const initialOpt = getQuadrantPopupOptions(anchor, pts);
+
+  if (hikePopup && map.hasLayer(hikePopup)) {
+    map.closePopup(hikePopup);
+  }
+  hikePopup = L.popup({
+    offset: initialOpt.offset,
+    className: initialOpt.className,
+    autoPanPadding: [20, 20]
+  })
+  .setLatLng(anchor)
+  .setContent(popupHTML(h, i))
+  .openOn(map);
+
+  // Read actual measured popup container size to align corner and tip exactly at the anchor
+  if (hikePopup._container) {
+    const dynamicOffset = computeDynamicOffset(quad, hikePopup._container);
+    hikePopup.options.offset = dynamicOffset;
+    hikePopup.update();
+  }
+
+  selectHike(i);
+}
+
+function isHikePopupOpen() {
+  return !!(hikePopup && map.hasLayer(hikePopup) && (typeof hikePopup.isOpen !== 'function' || hikePopup.isOpen()));
+}
+
 // ── render hikes ──────────────────────────────────────────────────
 function renderAll() {
   map.eachLayer(l=>{if(l instanceof L.Polyline||l instanceof L.CircleMarker||l instanceof L.LayerGroup) map.removeLayer(l);});
@@ -1669,11 +1792,13 @@ function renderAll() {
     const snapped = h.snapped && ensureRidgeData() ? snappedView(h) : null;
     const pts = snapped ? snapped.coords : h.coords;
     const ll=pts.map(c=>[c.lat,c.lon]);
-    const bindHit = (layer) => {
-      layer.bindPopup(popupHTML(h,i));
-      layer.on('click', () => {
+    h.lines = [];
+    const isSel = (i === selectedHikeIndex);
+    const bindHit = (layer, defaultAnchor) => {
+      layer.on('click', (e) => {
         if (Date.now() < suppressClickUntil) return;
-        highlightSidebar(i);
+        const anchor = defaultAnchor || e.latlng || L.latLng(ll[0][0], ll[0][1]);
+        showHikePopup(i, anchor);
       });
     };
     // With the Ridge Trail overlay on, split the track so the stretches that
@@ -1686,16 +1811,37 @@ function renderAll() {
         // end+2, not end+1: carry the next run's first point so consecutive
         // runs share the edge between them and the track has no gap at the
         // transition. The last run clamps harmlessly.
-        bindHit(L.polyline(ll.slice(r.start, r.end+2), {
-          color: h.color, weight: 3,
-          opacity: r.onRidge ? TRACK_OPACITY : TRACK_OPACITY_OFF_RIDGE
-        }).addTo(map));
+        const opacity = isSel ? TRACK_OPACITY_SELECTED : (r.onRidge ? TRACK_OPACITY : TRACK_OPACITY_OFF_RIDGE);
+        const weight = isSel ? TRACK_WEIGHT_SELECTED : TRACK_WEIGHT;
+        const poly = L.polyline(ll.slice(r.start, r.end+2), {
+          color: h.color, weight, opacity
+        }).addTo(map);
+        h.lines.push({ layer: poly, onRidge: r.onRidge });
+        bindHit(poly, null);
       }
     } else {
-      bindHit(L.polyline(ll,{color:h.color,weight:3,opacity:TRACK_OPACITY}).addTo(map));
+      const opacity = isSel ? TRACK_OPACITY_SELECTED : TRACK_OPACITY;
+      const weight = isSel ? TRACK_WEIGHT_SELECTED : TRACK_WEIGHT;
+      const poly = L.polyline(ll,{color:h.color,weight,opacity}).addTo(map);
+      h.lines.push({ layer: poly, onRidge: true });
+      bindHit(poly, null);
     }
-    L.circleMarker(ll[0],{radius:4,fillColor:'#4caf50',color:'#fff',weight:1.5,fillOpacity:1,interactive:false}).addTo(map);
-    L.circleMarker(ll[ll.length-1],{radius:4,fillColor:'#e53935',color:'#fff',weight:1.5,fillOpacity:1,interactive:false}).addTo(map);
+    h.startMarker = L.circleMarker(ll[0],{
+      radius: isSel ? START_MARKER_RADIUS_SELECTED : START_MARKER_RADIUS,
+      fillColor: '#4caf50',
+      color: '#fff',
+      weight: isSel ? 2.5 : 1.5,
+      fillOpacity: 1,
+      interactive: false
+    }).addTo(map);
+    h.endMarker = L.circleMarker(ll[ll.length-1],{
+      radius: isSel ? START_MARKER_RADIUS_SELECTED : START_MARKER_RADIUS,
+      fillColor: '#e53935',
+      color: '#fff',
+      weight: isSel ? 2.5 : 1.5,
+      fillOpacity: 1,
+      interactive: false
+    }).addTo(map);
     // Invisible wider hit geometry so 2.5–4 px lines and 4 px end-dots are
     // easy to tap — especially on touchscreens where pixel-precise hits
     // aren't feasible. Added on top so clicks near (but not on) the visible
@@ -1705,12 +1851,21 @@ function renderAll() {
     // pieces the visible line was split into, so focusHike()'s getBounds() and
     // openPopup() behave exactly as they did with a single visible polyline.
     h.layer = L.polyline(ll,{color:'#000',weight:22,opacity:0.001}).addTo(map);
-    bindHit(h.layer);
-    bindHit(L.circleMarker(ll[0],{radius:14,color:'#000',fillColor:'#000',weight:0,opacity:0.001,fillOpacity:0.001}).addTo(map));
-    bindHit(L.circleMarker(ll[ll.length-1],{radius:14,color:'#000',fillColor:'#000',weight:0,opacity:0.001,fillOpacity:0.001}).addTo(map));
+    bindHit(h.layer, null);
+    bindHit(L.circleMarker(ll[0],{radius:14,color:'#000',fillColor:'#000',weight:0,opacity:0.001,fillOpacity:0.001}).addTo(map), L.latLng(ll[0][0], ll[0][1]));
+    bindHit(L.circleMarker(ll[ll.length-1],{radius:14,color:'#000',fillColor:'#000',weight:0,opacity:0.001,fillOpacity:0.001}).addTo(map), L.latLng(ll[ll.length-1][0], ll[ll.length-1][1]));
+    if (isSel) {
+      h.lines.forEach(item => item.layer.bringToFront());
+      h.startMarker.bringToFront();
+      h.endMarker.bringToFront();
+      h.layer.bringToFront();
+    }
   });
   updateSidebar(); updateStats();
   if(ridgeVisible&&ridgeSegments) recomputeCoverage();
+  if (selectedHikeIndex !== null && selectedHikeIndex < hikes.length) {
+    selectHike(selectedHikeIndex);
+  }
 }
 
 function popupHTML(h,i){
@@ -1761,9 +1916,46 @@ function toggleSnap(i) {
   applyOp('update-hike', h.id, { meta: { snapped: !h.snapped } });
 }
 
-function highlightSidebar(i){
+let selectedHikeIndex = null;
+function selectHike(i){
+  selectedHikeIndex = (typeof i === 'number' && i >= 0 && i < hikes.length) ? i : null;
   document.querySelectorAll('.hike-item').forEach(el=>el.classList.remove('active'));
-  document.querySelector(`.hike-item[data-i="${i}"]`)?.classList.add('active');
+  if (selectedHikeIndex !== null) {
+    document.querySelector(`.hike-item[data-i="${selectedHikeIndex}"]`)?.classList.add('active');
+  }
+  hikes.forEach((h, idx) => {
+    const isSelected = (idx === selectedHikeIndex);
+    if (h.lines) {
+      for (const item of h.lines) {
+        const opacity = isSelected
+          ? TRACK_OPACITY_SELECTED
+          : (ridgeVisible && ensureRidgeData() && !item.onRidge ? TRACK_OPACITY_OFF_RIDGE : TRACK_OPACITY);
+        const weight = isSelected ? TRACK_WEIGHT_SELECTED : TRACK_WEIGHT;
+        item.layer.setStyle({ opacity, weight });
+        if (isSelected) item.layer.bringToFront();
+      }
+    }
+    if (h.startMarker) {
+      h.startMarker.setStyle({
+        radius: isSelected ? START_MARKER_RADIUS_SELECTED : START_MARKER_RADIUS,
+        weight: isSelected ? 2.5 : 1.5
+      });
+      if (isSelected) h.startMarker.bringToFront();
+    }
+    if (h.endMarker) {
+      h.endMarker.setStyle({
+        radius: isSelected ? START_MARKER_RADIUS_SELECTED : START_MARKER_RADIUS,
+        weight: isSelected ? 2.5 : 1.5
+      });
+      if (isSelected) h.endMarker.bringToFront();
+    }
+    if (isSelected && h.layer) {
+      h.layer.bringToFront();
+    }
+  });
+}
+function highlightSidebar(i){
+  selectHike(i);
 }
 function updateSidebar(){
   const list=document.getElementById('hike-list');
@@ -1779,10 +1971,13 @@ function updateSidebar(){
 }
 function updateStats(){ renderChip(); }
 function focusHike(i){
-  highlightSidebar(i);
   const h=hikes[i];
-  if(h?.layer){map.fitBounds(h.layer.getBounds(),{padding:[40,40]});h.layer.openPopup();}
-  // On narrow widths, the sidebar is an overlay — close it so the map is visible.
+  if(h){
+    const pts = h.snapped && ensureRidgeData() ? snappedView(h).coords : h.coords;
+    const ll = pts.map(c=>[c.lat,c.lon]);
+    map.fitBounds(L.latLngBounds(ll),{padding:[40,40]});
+    showHikePopup(i, L.latLng(ll[0][0], ll[0][1]));
+  }
   if (isNarrow()) closeHikeList();
 }
 
@@ -1874,6 +2069,9 @@ function closeElev(){
   document.getElementById('elev-panel').classList.remove('open');
   if(elevChart){elevChart.destroy();elevChart=null;}
   hideElevHoverPoint();
+  if (!isHikePopupOpen()) {
+    selectHike(null);
+  }
 }
 
 // ── locate (one-shot GPS) ─────────────────────────────────────────
@@ -2577,6 +2775,19 @@ document.getElementById('map').addEventListener('drop',e=>{e.preventDefault();lo
       if (coordPopup) coordPopup.openOn(map);
     }
   });
+
+  // Clear hike selection when popup is closed (unless elevation profile is active)
+  map.on('popupclose', (e) => {
+    if (e.popup === coordPopup) return;
+    const elevOpen = document.getElementById('elev-panel')?.classList.contains('open');
+    if (elevOpen) return;
+    setTimeout(() => {
+      const elevStillOpen = document.getElementById('elev-panel')?.classList.contains('open');
+      if (!isHikePopupOpen() && !elevStillOpen) {
+        selectHike(null);
+      }
+    }, 10);
+  });
 })();
 
 // ── boot ──────────────────────────────────────────────────────────
@@ -2687,6 +2898,12 @@ window.formatGoogleMapsUrl = formatGoogleMapsUrl;
 window.showCoordPopup = showCoordPopup;
 window.parseGPX = parseGPX;
 window.trimTrailingVehicle = trimTrailingVehicle;
+window.selectHike = selectHike;
+window.selectedHikeIndex = () => selectedHikeIndex;
+window.getClearestQuadrant = getClearestQuadrant;
+window.getQuadrantPopupOptions = getQuadrantPopupOptions;
+window.computeDynamicOffset = computeDynamicOffset;
+window.showHikePopup = showHikePopup;
 renderLocateLog();
 requestPersistentStorage();
 refreshTileStatus();
