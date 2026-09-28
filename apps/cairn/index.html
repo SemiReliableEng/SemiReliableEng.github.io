@@ -47,6 +47,16 @@
     --md-shape-xl: 28px;
     --md-shape-full: 9999px;
 
+    --md-elevation-1: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px 1px rgba(0,0,0,0.15);
+    --md-elevation-2: 0 1px 2px rgba(0,0,0,0.3), 0 2px 6px 2px rgba(0,0,0,0.15);
+    --md-elevation-3: 0 1px 3px rgba(0,0,0,0.3), 0 4px 8px 3px rgba(0,0,0,0.15);
+
+    --md-motion-emphasized: cubic-bezier(0.2, 0, 0, 1);
+    --md-motion-standard: cubic-bezier(0.2, 0, 0, 1);
+    --md-motion-short: 200ms;
+    --md-motion-medium: 300ms;
+    --md-motion-long: 500ms;
+
     --serif: 'Playfair Display', Georgia, serif;
     --sans: 'DM Sans', sans-serif;
     --mono: 'DM Mono', monospace;
@@ -575,7 +585,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v36';
+const APP_VERSION = 'cairn-v37';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -641,6 +651,16 @@ function setUnits(u) {
   document.getElementById('btn-metric').classList.toggle('active',   u==='metric');
   updateStats(); updateSidebar(); updateCoverageUI();
   if (elevChart && elevChart._hikeIdx !== undefined) showElev(elevChart._hikeIdx);
+}
+
+function esc(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ── op log + snapshot ─────────────────────────────────────────────
@@ -727,18 +747,20 @@ function minimalOpsForStorage() {
   const keptAddDel = new Map(); // `${op}:${entityId}` → chosen op
   const rest = [];
   for (const op of ops) {
+    if (op.deviceId === deviceId) {
+      rest.push(op);
+      continue;
+    }
     if (op.op === 'add-hike' || op.op === 'delete-hike') {
       const key = `${op.op}:${op.entityId}`;
       const existing = keptAddDel.get(key);
-      const prefer =
-        !existing ||
-        (op.deviceId === deviceId && existing.deviceId !== deviceId);
+      const prefer = !existing;
       if (prefer) keptAddDel.set(key, op);
       continue;
     }
     rest.push(op);
   }
-  return [...keptAddDel.values(), ...collapseOwnUpdates(rest)];
+  return [...keptAddDel.values(), ...collapseOwnUpdates(rest)].sort(replayOrder);
 }
 
 function saveOps() {
@@ -868,7 +890,8 @@ function hasHike(hikeId) {
 const map = L.map('map', { zoomControl: false }).setView([37.7, -122.2], 9);
 const baseTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
   attribution: 'Tiles &copy; <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a> &mdash; Esri, USGS, GIS Community',
-  maxZoom: 19
+  maxZoom: 19,
+  crossOrigin: true
 }).addTo(map);
 map.createPane('ridgePane');
 map.getPane('ridgePane').style.zIndex = 350; // below hike layers
@@ -1768,7 +1791,11 @@ function isHikePopupOpen() {
 
 // ── render hikes ──────────────────────────────────────────────────
 function renderAll() {
-  map.eachLayer(l=>{if(l instanceof L.Polyline||l instanceof L.CircleMarker||l instanceof L.LayerGroup) map.removeLayer(l);});
+  map.eachLayer(l => {
+    if (l !== locateLayer && (l instanceof L.Polyline || l instanceof L.CircleMarker || l instanceof L.LayerGroup)) {
+      map.removeLayer(l);
+    }
+  });
   if(ridgeVisible&&ridgeLayer) ridgeLayer.addTo(map);
   if (coordPopup && map.hasLayer(coordPopup) && coordPopup.getLatLng()) {
     coordMarker = L.circleMarker(coordPopup.getLatLng(), {
@@ -1873,9 +1900,9 @@ function renderAll() {
 }
 
 function popupHTML(h,i){
-  return `<div class="popup-name">${h.name}</div>
+  return `<div class="popup-name">${esc(h.name)}</div>
   <div class="popup-stats">
-    <div class="popup-row"><span class="popup-key">Date</span><span class="popup-val">${h.date||'—'}</span></div>
+    <div class="popup-row"><span class="popup-key">Date</span><span class="popup-val">${esc(h.date || '—')}</span></div>
     <div class="popup-row"><span class="popup-key">Distance</span><span class="popup-val">${dispDist(h.distKm)}</span></div>
     <div class="popup-row"><span class="popup-key">Elev gain</span><span class="popup-val">${dispElev(h.elevGain)}</span></div>
   </div>
@@ -1961,9 +1988,9 @@ function updateSidebar(){
   if(!hikes.length){list.innerHTML='<div class="empty-sidebar">No hikes loaded yet</div>';return;}
   list.innerHTML=hikes.map((h,i)=>`
     <div class="hike-item" data-i="${i}" onclick="focusHike(${i})">
-      <div class="hike-name" title="${h.name}">${h.name}</div>
+      <div class="hike-name" title="${esc(h.name)}">${esc(h.name)}</div>
       <div class="hike-meta"><span class="hike-dist ${distBandClass(h.distKm)}">${dispDist(h.distKm)}</span></div>
-      <div class="hike-date">${h.date||'No date'}</div>
+      <div class="hike-date">${esc(h.date || 'No date')}</div>
     </div>`).join('');
   document.getElementById('hike-count').textContent=hikes.length;
   document.getElementById('add-more-btn').style.display='block';

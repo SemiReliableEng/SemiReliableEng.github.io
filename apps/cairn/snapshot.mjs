@@ -149,7 +149,11 @@ export function isOpCoveredBySnapshot(op, snap) {
   const tomb = snap.tombstones || {};
   switch (op.op) {
     case 'add-hike':
-      return Object.prototype.hasOwnProperty.call(live, op.entityId);
+      if (Object.prototype.hasOwnProperty.call(live, op.entityId)) return true;
+      if (Object.prototype.hasOwnProperty.call(tomb, op.entityId)) {
+        return op.ts <= tomb[op.entityId];
+      }
+      return false;
     case 'delete-hike':
       return Object.prototype.hasOwnProperty.call(tomb, op.entityId);
     case 'update-hike':
