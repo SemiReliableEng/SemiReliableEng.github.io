@@ -1156,19 +1156,6 @@
   .manual-add-bar:active { background: var(--cream); }
   .manual-add-bar svg { width: 18px; height: 18px; flex-shrink: 0; }
 
-  .manual-form {
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    border-top: 1px solid var(--cream);
-    margin-top: 4px;
-  }
-  .manual-form .field-label { margin-bottom: 4px; }
-  .manual-form .text-input {
-    font-family: var(--sans);
-    font-size: 15px;
-  }
   .manual-form-title {
     font-family: var(--serif);
     font-size: 16px;
@@ -1699,7 +1686,8 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v46';
+const APP_VERSION = 'marginalia-v47';
+const $ = id => document.getElementById(id);
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -1730,7 +1718,6 @@ let opSeq = 0;
 
 // ── Op storage ──────────────────────────────────────
 let localOps = [];   // merged ops from all devices (minus those covered by snapshot)
-let deviceOps = [];  // ops from THIS device only (derived)
 let materializedCache = null;
 
 // Snapshot shape: { version: 1, lastCompactedTs: ms, live: { eid: state }, tombstones: { eid: deletedTs } }.
@@ -1858,7 +1845,6 @@ function createOp(opType, entityId, data) {
 function applyOp(opType, entityId, data) {
   const op = createOp(opType, entityId, data);
   localOps.push(op);
-  deviceOps.push(op);
   materializedCache = null; // invalidate
   saveOpsToStorage();
   scheduleSyncPush();
@@ -1869,7 +1855,6 @@ function applyOps(opList) {
   for (const { opType, entityId, data } of opList) {
     const op = createOp(opType, entityId, data);
     localOps.push(op);
-    deviceOps.push(op);
   }
   materializedCache = null;
   saveOpsToStorage();
@@ -1892,7 +1877,6 @@ snapshot = loadSnapshotFromStorage();
 if (snapshot) {
   localOps = localOps.filter(op => !isOpCoveredBySnapshot(op, snapshot));
 }
-deviceOps = localOps.filter(op => op.deviceId === DEVICE_ID);
 let db = loadData();
 let currentBookId = null;
 let currentTab = 'quotes';
@@ -1975,19 +1959,6 @@ function closeModalDirect(id) {
     if (typeof stopRecording === 'function') stopRecording();
   }
   document.getElementById(id).classList.remove('open');
-}
-
-function closeTopModal() {
-  // Close the first open modal found, popping history if needed
-  for (const id of modalIds) {
-    const el = document.getElementById(id);
-    if (el && el.classList.contains('open')) {
-      if (!_closingViaPopstate) history.back();
-      else closeModalDirect(id);
-      return true;
-    }
-  }
-  return false;
 }
 
 window.addEventListener('popstate', (e) => {
@@ -2093,6 +2064,35 @@ function highlight(text, q) {
   } catch { return t; }
 }
 
+function getEntryAttribution(entry, book) {
+  if (!entry) return { isQuoteBook: false, author: '', source: '', location: '', authorSource: '', primary: '', context: '', url: '' };
+  const isQuoteBook = book?.kind === 'quote_book';
+  const author = entry.author || '';
+  const source = entry.source || '';
+  const location = entry.location || '';
+  const title = book?.title || '';
+  const authorSource = [author, source].filter(Boolean).join(', ');
+
+  const primary = isQuoteBook
+    ? (authorSource || location)
+    : (title ? `${title}${book.author ? ', ' + book.author : ''}` : '');
+
+  const context = isQuoteBook
+    ? (authorSource ? `${authorSource} (from ${title || 'Collection'})` : (location ? `${location} (from ${title || 'Collection'})` : (title || 'Unknown')))
+    : (title ? `${title}${book.author ? ' by ' + book.author : ''}` : 'Unknown');
+
+  return {
+    isQuoteBook,
+    author,
+    source,
+    location,
+    authorSource,
+    primary,
+    context,
+    url: entry.url || ''
+  };
+}
+
 function bookCardHTML(book, q) {
   const count = db.entries.filter(e => e.bookId === book.id && e.type === 'quote').length;
   const isQuoteBook = book.kind === 'quote_book';
@@ -2188,14 +2188,14 @@ function renderShelf() {
   const refHTML = (e) => {
     const b = bookById[e.bookId];
     if (!b) return '';
+    const attr = getEntryAttribution(e, b);
     if (b.kind === 'quote_book') {
-      const attr = [e.author, e.source].filter(Boolean).join(', ');
-      const label = attr ? highlight(attr, q) : (e.location ? highlight(e.location, q) : '');
+      const label = attr.primary ? highlight(attr.primary, q) : '';
       return label
         ? `<div class="quote-book-ref">— ${label} <span style="opacity:0.6">(${highlight(b.title, q)})</span></div>`
         : `<div class="quote-book-ref">— ${highlight(b.title, q)}</div>`;
     }
-    return `<div class="quote-book-ref">— ${highlight(b.title, q)}, ${highlight(b.author, q)}</div>`;
+    return `<div class="quote-book-ref">— ${highlight(b.title, q)}${b.author ? ', ' + highlight(b.author, q) : ''}</div>`;
   };
   const resultHTML = (e, cls) => `<div class="search-result${cls}" onclick="openBook('${e.bookId}')">
     <div class="search-result-text">${highlight(e.text, q)}</div>
@@ -2245,10 +2245,6 @@ document.getElementById('screen-search').addEventListener('transitionend', () =>
   }
 });
 
-function showScreen_orig(id) { showScreen(id); }
-// Patch to focus search
-const _showScreen = showScreen;
-
 async function findMetadata() {
   db = loadData();
   const book = db.books.find(b => b.id === currentBookId);
@@ -2260,17 +2256,7 @@ async function findMetadata() {
   openModalWithHistory('modal-meta');
 
   const q = [book.title, book.author].filter(Boolean).join(' ');
-  const gbUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=8&fields=items(id,volumeInfo(title,authors,publishedDate,imageLinks))`;
-  const olUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=8&fields=key,title,author_name,first_publish_year,cover_i,cover_edition_key`;
-
-  const [gbResult, olResult] = await Promise.allSettled([
-    fetch(gbUrl).then(r => r.json()).catch(() => null),
-    fetch(olUrl).then(r => r.json()).catch(() => null)
-  ]);
-
-  const gbItems = (gbResult.status === 'fulfilled' && gbResult.value?.items) ? gbResult.value.items.map(normaliseGoogle) : [];
-  const olItems = (olResult.status === 'fulfilled' && olResult.value?.docs) ? olResult.value.docs.map(normaliseOL) : [];
-  const merged = dedupeResults([...gbItems, ...olItems]).filter(i => i.title);
+  const merged = await fetchBookResults(q, 8);
 
   if (!merged.length) {
     body.innerHTML = `<div class="search-hint">No matches found. Try editing the book title and searching again.</div>`;
@@ -2349,12 +2335,11 @@ function dedupeResults(items) {
   });
 }
 
-async function searchBooks(q) {
-  const el = document.getElementById('search-results');
-  el.innerHTML = `<div class="spinner"><span class="spin">⟳</span> Searching…</div>`;
-
-  const gbUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=12&fields=items(id,volumeInfo(title,authors,publishedDate,imageLinks))`;
-  const olUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=12&fields=key,title,author_name,first_publish_year,cover_i,cover_edition_key`;
+// ── Fetch books in parallel from Google Books & Open Library ────
+async function fetchBookResults(query, limit = 10) {
+  const q = encodeURIComponent(query.trim());
+  const gbUrl = `https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=${limit}&fields=items(id,volumeInfo(title,authors,publishedDate,imageLinks))`;
+  const olUrl = `https://openlibrary.org/search.json?q=${q}&limit=${limit}&fields=key,title,author_name,first_publish_year,cover_i,cover_edition_key`;
 
   const [gbResult, olResult] = await Promise.allSettled([
     fetch(gbUrl).then(r => r.json()).catch(() => null),
@@ -2364,8 +2349,14 @@ async function searchBooks(q) {
   const gbItems = (gbResult.status === 'fulfilled' && gbResult.value?.items) ? gbResult.value.items.map(normaliseGoogle) : [];
   const olItems = (olResult.status === 'fulfilled' && olResult.value?.docs) ? olResult.value.docs.map(normaliseOL) : [];
 
-  // Interleave: GB first, then OL items not already covered
-  const merged = dedupeResults([...gbItems, ...olItems]).filter(i => i.title);
+  return dedupeResults([...gbItems, ...olItems]).filter(i => i.title);
+}
+
+async function searchBooks(q) {
+  const el = document.getElementById('search-results');
+  el.innerHTML = `<div class="spinner"><span class="spin">⟳</span> Searching…</div>`;
+
+  const merged = await fetchBookResults(q, 12);
 
   if (!merged.length) {
     el.innerHTML = `<div class="search-hint"><div class="search-hint-icon">🔍</div>No books found. Try a different search.</div>` + manualEntryFooter();
@@ -2672,14 +2663,14 @@ function renderBookContent() {
     el.innerHTML = `<div class="section-label">${entries.length} quote${entries.length !== 1 ? 's' : ''}</div>` +
       sorted.map(e => {
         let metaHtml = '';
-        if (e.author || e.source) {
-          const attr = [e.author, e.source].filter(Boolean).join(', ');
-          metaHtml += `<div class="quote-attribution">— ${esc(attr)}</div>`;
-        } else if (e.location) {
-          metaHtml += `<div class="quote-location">📍 ${esc(e.location)}</div>`;
+        const attr = getEntryAttribution(e, db.books.find(b => b.id === currentBookId));
+        if (attr.authorSource) {
+          metaHtml += `<div class="quote-attribution">— ${esc(attr.authorSource)}</div>`;
+        } else if (attr.location) {
+          metaHtml += `<div class="quote-location">📍 ${esc(attr.location)}</div>`;
         }
-        if (e.url) {
-          const safeUrl = sanitizeQuoteUrl(e.url);
+        if (attr.url) {
+          const safeUrl = sanitizeQuoteUrl(attr.url);
           if (safeUrl) {
             const domain = formatUrlDomain(safeUrl);
             metaHtml += `<div class="quote-link"><a href="${esc(safeUrl)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">🔗 ${esc(domain)}</a></div>`;
@@ -2725,16 +2716,17 @@ function copyQuote(id) {
   const entry = db.entries.find(e => e.id === id);
   if (!entry) return;
   const book = db.books.find(b => b.id === entry.bookId);
-  const isQuoteBook = book?.kind === 'quote_book';
+  const attr = getEntryAttribution(entry, book);
 
   let source = '';
-  if (entry.author || entry.source) {
-    const attr = [entry.author, entry.source].filter(Boolean).join(', ');
-    source = `\n— ${attr}${entry.url ? ` (${entry.url})` : ''}`;
-  } else if (isQuoteBook) {
-    source = entry.location ? `\n— ${entry.location}` : '';
+  if (attr.isQuoteBook) {
+    if (attr.authorSource) {
+      source = `\n— ${attr.authorSource}${attr.url ? ` (${attr.url})` : ''}`;
+    } else if (attr.location) {
+      source = `\n— ${attr.location}`;
+    }
   } else if (book) {
-    source = `\n— ${book.title}${book.author ? ', ' + book.author : ''}`;
+    source = `\n— ${attr.primary}`;
   }
 
   navigator.clipboard.writeText(`"${entry.text}"${source}`)
@@ -2997,9 +2989,6 @@ document.getElementById('modal-meta').addEventListener('click', function(e) {
 });
 
 // ═══════════════════════════════════════════════
-// ALL QUOTES SEARCH
-// ═══════════════════════════════════════════════
-// ═══════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════
 function esc(str) {
@@ -3040,11 +3029,6 @@ function loadGHSettings() {
   catch { return {}; }
 }
 function saveGHSettings(s) { localStorage.setItem(GH_SETTINGS_KEY, JSON.stringify(s)); }
-
-function ghConfigured() {
-  const s = loadGHSettings();
-  return s.username && s.repo && s.token;
-}
 
 function addSyncLog(msg) {
   const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -3151,7 +3135,6 @@ function saveGeminiKey(key) {
   if (key) localStorage.setItem(GEMINI_SETTINGS_KEY, key);
   else localStorage.removeItem(GEMINI_SETTINGS_KEY);
 }
-function geminiConfigured() { return !!loadGeminiKey(); }
 
 async function saveGeminiSettings() {
   const key = document.getElementById('gemini-key').value.trim();
@@ -3415,14 +3398,8 @@ function askAI(destination) {
   const quotes = db.entries.filter(e => e.type === 'quote');
   const lines = quotes.map(e => {
     const book = db.books.find(b => b.id === e.bookId);
-    let source = 'Unknown';
-    if (book && book.kind === 'quote_book') {
-      const attr = [e.author, e.source].filter(Boolean).join(', ');
-      source = attr ? `${attr} (from ${book.title})` : (e.location ? `${e.location} (from ${book.title})` : book.title);
-    } else if (book) {
-      source = `${book.title}${book.author ? ' by ' + book.author : ''}`;
-    }
-    return `- "${e.text}" — ${source}`;
+    const attr = getEntryAttribution(e, book);
+    return `- "${e.text}" — ${attr.context}`;
   }).join('\n');
 
   const prompt = `Here are all my saved book quotes:\n\n${lines}\n\nI'd love to discuss these with you. What patterns, themes, or ideas do you notice across them? Feel free to ask me questions too.`;
@@ -3475,8 +3452,6 @@ updateSettingsFields();
 globalThis.marginaliaState = {
   get localOps() { return localOps; },
   set localOps(v) { localOps = v; },
-  get deviceOps() { return deviceOps; },
-  set deviceOps(v) { deviceOps = v; },
   get snapshot() { return snapshot; },
   set snapshot(v) { snapshot = v; },
   invalidateMaterialized() { materializedCache = null; },
@@ -3611,7 +3586,6 @@ function onOpsMerged(allOps) {
   const snap = state.snapshot;
   const filtered = snap ? allOps.filter(op => !state.isOpCoveredBySnapshot(op, snap)) : allOps;
   state.localOps = filtered;
-  state.deviceOps = filtered.filter(op => op.deviceId === state.DEVICE_ID);
   state.invalidateMaterialized();
   state.saveOpsToStorage();
   state.reloadDb();
@@ -3850,7 +3824,6 @@ async function runCompaction(settings) {
     state.snapshot = newSnap;
     state.saveSnapshotToStorage(newSnap);
     state.localOps = state.localOps.filter(op => !state.isOpCoveredBySnapshot(op, newSnap));
-    state.deviceOps = state.localOps.filter(op => op.deviceId === state.DEVICE_ID);
     state.invalidateMaterialized();
     state.saveOpsToStorage();
     state.reloadDb();
