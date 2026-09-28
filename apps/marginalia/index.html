@@ -605,11 +605,15 @@
   .quote-link a:hover {
     text-decoration: underline;
   }
-  .book-cover-placeholder.quote-book-cover {
+  .book-cover-placeholder.quote-book-cover,
+  .book-hero-cover-placeholder.quote-book-cover {
     background: linear-gradient(135deg, #443224 0%, #2b1f16 100%);
     border: 1px solid rgba(255,255,255,0.18);
     color: #e8d7c3;
     font-size: 26px;
+  }
+  .quote-book-cover::after {
+    display: none !important;
   }
   .quote-book-tag {
     display: inline-block;
@@ -836,6 +840,15 @@
   .location-input {
     font-family: var(--sans);
     font-size: 14px;
+  }
+
+  select.text-input {
+    font-family: var(--sans);
+    font-size: 14px;
+    min-height: 52px;
+    background-color: var(--md-surface-container);
+    color: var(--ink);
+    cursor: pointer;
   }
 
   .modal-footer {
@@ -1472,7 +1485,7 @@
           </div>
           <div class="field-group">
             <div class="field-label">OCR Engine</div>
-            <select class="text-input" id="ocr-engine" onchange="saveOCREngine(this.value)" style="font-family:var(--sans);font-size:14px;">
+            <select class="text-input" id="ocr-engine" onchange="saveOCREngine(this.value)">
               <option value="tesseract">Tesseract (local, free)</option>
               <option value="gemini">Gemini AI (cloud, needs key)</option>
             </select>
@@ -1502,7 +1515,7 @@
           </div>
           <div class="field-group">
             <div class="field-label">Transcription Engine</div>
-            <select class="text-input" id="audio-engine" onchange="saveAudioEngine(this.value)" style="font-family:var(--sans);font-size:14px;">
+            <select class="text-input" id="audio-engine" onchange="saveAudioEngine(this.value)">
               <option value="whisper">Whisper (local, free)</option>
               <option value="gemini">Gemini AI (cloud, needs key)</option>
             </select>
@@ -1600,10 +1613,10 @@
             <div class="field-label">Link <span style="opacity:0.5;font-style:italic;text-transform:none;letter-spacing:0">(optional URL)</span></div>
             <input class="text-input" id="entry-url" type="url" placeholder="https://…" autocomplete="off" name="quote-url">
           </div>
-          <div class="field-group" id="move-group" style="display:none;margin-top:10px">
-            <div class="field-label">Collection</div>
-            <select class="text-input" id="entry-book-id" style="background:var(--md-surface-container);color:var(--ink);height:42px"></select>
-          </div>
+        </div>
+        <div class="field-group" id="move-group" style="display:none;margin-top:10px">
+          <div class="field-label">Collection</div>
+          <select class="text-input" id="entry-book-id"></select>
         </div>
       </div>
       <div class="modal-footer">
@@ -1686,7 +1699,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v43';
+const APP_VERSION = 'marginalia-v46';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -1927,9 +1940,10 @@ function showScreen(id) {
     document.getElementById(id).classList.add('active');
     if (id === 'screen-shelf') {
       renderShelf();
+      currentBookId = null;
       history.replaceState({ screen: 'screen-shelf' }, '');
     } else {
-      history.pushState({ screen: 'screen-shelf' }, '');
+      history.pushState({ screen: id }, '');
     }
   }
 
@@ -1957,6 +1971,9 @@ function openModalWithHistory(id) {
 }
 
 function closeModalDirect(id) {
+  if (id === 'modal-add') {
+    if (typeof stopRecording === 'function') stopRecording();
+  }
   document.getElementById(id).classList.remove('open');
 }
 
@@ -2080,7 +2097,7 @@ function bookCardHTML(book, q) {
   const count = db.entries.filter(e => e.bookId === book.id && e.type === 'quote').length;
   const isQuoteBook = book.kind === 'quote_book';
   const coverHtml = !isQuoteBook && book.cover
-    ? `<img class="book-cover" src="${book.cover}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+    ? `<img class="book-cover" src="${esc(book.cover)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
     : '';
   const placeholderStyle = (!isQuoteBook && book.cover) ? 'display:none' : '';
   const placeholderIcon = isQuoteBook ? '📓' : '📗';
@@ -2264,14 +2281,14 @@ async function findMetadata() {
     merged.map(item => {
       const payload = JSON.stringify({ googleId: item.id, title: item.title, author: item.author, year: item.year, cover: item.cover }).replace(/'/g, '&#39;');
       const coverHtml = item.cover
-        ? `<img class="meta-candidate-cover" src="${item.cover}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="meta-candidate-placeholder" style="display:none">📗</div>`
+        ? `<img class="meta-candidate-cover" src="${esc(item.cover)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="meta-candidate-placeholder" style="display:none">📗</div>`
         : `<div class="meta-candidate-placeholder">📗</div>`;
       return `<div class="meta-candidate" onclick='importMetadata(${payload})'>
         ${coverHtml}
         <div class="meta-candidate-info">
           <div class="meta-candidate-title">${esc(item.title)}</div>
           ${item.author ? `<div class="meta-candidate-author">${esc(item.author)}</div>` : ''}
-          ${item.year ? `<div class="meta-candidate-year">${item.year}</div>` : ''}
+          ${item.year ? `<div class="meta-candidate-year">${esc(item.year)}</div>` : ''}
           <div style="font-size:11px;color:var(--warm-mid);margin-top:2px">${item.source}</div>
         </div>
         <div class="meta-check">›</div>
@@ -2443,11 +2460,25 @@ function formatUrlDomain(url) {
   }
 }
 
+function sanitizeQuoteUrl(raw) {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  const normalized = (trimmed.startsWith('http://') || trimmed.startsWith('https://')) ? trimmed : `https://${trimmed}`;
+  try {
+    const u = new URL(normalized);
+    if (u.protocol === 'http:' || u.protocol === 'https:') {
+      return u.href;
+    }
+  } catch {}
+  return null;
+}
+
 function addBookManually() {
   const title = (document.getElementById('manual-title').value || '').trim();
   if (!title) { showToast('Please enter a title'); return; }
   const author = (document.getElementById('manual-author').value || '').trim();
-  const year = (document.getElementById('manual-year').value || '').trim();
+  let year = (document.getElementById('manual-year').value || '').trim();
+  year = year.replace(/[^\d-]/g, '').slice(0, 10);
   const bookId = 'b_' + Date.now();
   applyOp('add-book', bookId, {
     googleId: null,
@@ -2467,7 +2498,7 @@ function renderSearchResults(items) {
   const el = document.getElementById('search-results');
   el.innerHTML = items.map(item => {
     const coverHtml = item.cover
-      ? `<img class="result-cover" src="${item.cover}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="result-cover-placeholder" style="display:none">📗</div>`
+      ? `<img class="result-cover" src="${esc(item.cover)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="result-cover-placeholder" style="display:none">📗</div>`
       : `<div class="result-cover-placeholder">📗</div>`;
     const bookData = JSON.stringify({ id: item.id, title: item.title, author: item.author, year: item.year, cover: item.cover }).replace(/'/g, '&#39;');
     return `<div class="search-result-item" onclick='addBookFromSearch(${bookData})'>
@@ -2475,7 +2506,7 @@ function renderSearchResults(items) {
       <div class="result-info">
         <div class="result-title">${esc(item.title)}</div>
         <div class="result-author">${esc(item.author)}</div>
-        ${item.year ? `<div class="result-year">${item.year}</div>` : ''}
+        ${item.year ? `<div class="result-year">${esc(item.year)}</div>` : ''}
         <div style="font-size:11px;color:var(--warm-mid);margin-top:2px">${item.source}</div>
       </div>
     </div>`;
@@ -2541,14 +2572,14 @@ function renderBookDetail() {
   }
 
   const coverHtml = book.cover
-    ? `<img class="book-hero-cover" src="${book.cover}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="book-hero-cover-placeholder" style="display:none">📗</div>`
+    ? `<img class="book-hero-cover" src="${esc(book.cover)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="book-hero-cover-placeholder" style="display:none">📗</div>`
     : `<div class="book-hero-cover-placeholder" onclick="document.getElementById('cover-file').click()" title="Tap to set cover image">📗</div>`;
   document.getElementById('book-hero').innerHTML = `
     ${coverHtml}
     <div class="book-hero-info">
-      <a class="book-hero-title" href="https://www.google.com/search?q=${encodeURIComponent(book.title + ' book')}" target="_blank">${esc(book.title)}</a>
-      <a class="book-hero-author" href="https://www.google.com/search?q=${encodeURIComponent(book.author)}" target="_blank">${esc(book.author)}</a>
-      ${book.year ? `<div class="book-hero-year">${book.year}</div>` : ''}
+      <a class="book-hero-title" href="https://www.google.com/search?q=${encodeURIComponent(book.title + ' book')}" target="_blank" rel="noopener noreferrer">${esc(book.title)}</a>
+      <a class="book-hero-author" href="https://www.google.com/search?q=${encodeURIComponent(book.author)}" target="_blank" rel="noopener noreferrer">${esc(book.author)}</a>
+      ${book.year ? `<div class="book-hero-year">${esc(book.year)}</div>` : ''}
       ${book.startedAt ? `<div class="book-hero-year">Started ${formatDate(book.startedAt)}</div>` : ''}
       <div class="book-hero-actions">
         <button class="meta-btn" onclick="openBookEdit()">
@@ -2603,7 +2634,7 @@ function saveBookEdit() {
   if (!isQuoteBook) {
     const startedVal = document.getElementById('edit-book-started').value;
     patch.author = document.getElementById('edit-book-author').value.trim();
-    patch.year = document.getElementById('edit-book-year').value.trim();
+    patch.year = document.getElementById('edit-book-year').value.trim().replace(/[^\d-]/g, '').slice(0, 10);
     patch.startedAt = startedVal ? new Date(startedVal + 'T00:00:00').getTime() : '';
   }
   applyOp('update-book', currentBookId, patch);
@@ -2648,8 +2679,11 @@ function renderBookContent() {
           metaHtml += `<div class="quote-location">📍 ${esc(e.location)}</div>`;
         }
         if (e.url) {
-          const domain = formatUrlDomain(e.url);
-          metaHtml += `<div class="quote-link"><a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">🔗 ${esc(domain)}</a></div>`;
+          const safeUrl = sanitizeQuoteUrl(e.url);
+          if (safeUrl) {
+            const domain = formatUrlDomain(safeUrl);
+            metaHtml += `<div class="quote-link"><a href="${esc(safeUrl)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">🔗 ${esc(domain)}</a></div>`;
+          }
         }
         return `
         <div class="quote-card" data-id="${e.id}" onclick="openEditModal('${e.id}')">
@@ -2719,6 +2753,8 @@ function deleteEntry(id) {
   db = loadData();
   renderBookContent();
   renderShelf();
+  const book = db.books.find(b => b.id === entry.bookId);
+  if (book && book.kind === 'quote_book') renderBookDetail();
 }
 
 // ═══════════════════════════════════════════════
@@ -2799,6 +2835,7 @@ function openEditModal(id) {
 }
 
 function closeModal() {
+  if (typeof stopRecording === 'function') stopRecording();
   if (_closingViaPopstate) {
     closeModalDirect('modal-add');
   } else {
@@ -2864,7 +2901,8 @@ function saveEntry() {
     if (!entry) { showToast('Entry not found'); return; }
 
     let targetBookId = currentBookId;
-    if (isQuoteBook) {
+    const moveGroup = document.getElementById('move-group');
+    if (isQuoteBook && moveGroup && moveGroup.style.display !== 'none') {
       const select = document.getElementById('entry-book-id');
       if (select && select.value) targetBookId = select.value;
     }
@@ -2919,6 +2957,7 @@ function saveEntry() {
     showToast(`${entryType === 'quote' ? 'Quote' : 'Note'} saved!`);
   }
 
+  renderShelf();
   if (document.getElementById('screen-book').classList.contains('active')) {
     switchTab(entryType === 'quote' ? 'quotes' : 'notes');
     renderBookDetail();
@@ -2964,8 +3003,13 @@ document.getElementById('modal-meta').addEventListener('click', function(e) {
 // UTILITIES
 // ═══════════════════════════════════════════════
 function esc(str) {
-  if (!str) return '';
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function formatDate(ts) {
@@ -3120,9 +3164,12 @@ async function saveGeminiSettings() {
   msg.textContent = 'Testing key…';
 
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': key
+      },
       body: JSON.stringify({ contents: [{ parts: [{ text: 'Reply with just the word OK.' }] }] })
     });
     if (res.ok) {
@@ -3259,9 +3306,12 @@ async function ocrWithGemini(file) {
   const key = loadGeminiKey();
   if (!key) throw new Error('Gemini API key not configured');
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': key
+    },
     body: JSON.stringify({
       contents: [{ parts: [
         { inlineData: { mimeType: 'image/jpeg', data: base64 } },
@@ -3276,7 +3326,6 @@ async function ocrWithGemini(file) {
   }
 
   const data = await res.json();
-  console.log('Gemini response:', JSON.stringify(data, null, 2));
   const parts = data.candidates?.[0]?.content?.parts || [];
   const text = parts.filter(p => p.text && !p.thought).map(p => p.text).join('\n');
   return text.trim();
@@ -4211,9 +4260,12 @@ async function transcribeWithGemini(samples) {
   const key = loadGeminiKey();
   if (!key) throw new Error('Gemini API key not configured');
   const base64 = bytesToBase64(encodeWav(samples, TARGET_SAMPLE_RATE));
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': key
+    },
     body: JSON.stringify({
       contents: [{ parts: [
         { inlineData: { mimeType: 'audio/wav', data: base64 } },
