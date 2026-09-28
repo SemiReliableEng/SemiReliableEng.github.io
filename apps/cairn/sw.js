@@ -11,7 +11,7 @@
 //   TILES_CACHE       — runtime + trail-prefetched tiles. Survives shell bumps
 //                       so the page-side prefetch (z10-15 along Ridge Trail +
 //                       imported hikes) doesn't get wiped on every UI release.
-const CACHE = 'cairn-v37';
+const CACHE = 'cairn-v38';
 const BASE_TILES_CACHE = 'cairn-tiles-base-v2';
 const TILES_CACHE = 'cairn-tiles-v1';
 
@@ -52,10 +52,6 @@ const CDN_HOSTS = new Set([
 const TILE_HOSTS = new Set([
   'server.arcgisonline.com',
   'services.arcgisonline.com',
-  'a.basemaps.cartocdn.com',
-  'b.basemaps.cartocdn.com',
-  'c.basemaps.cartocdn.com',
-  'd.basemaps.cartocdn.com',
 ]);
 
 // ── base-tile precache list (z6-11 over Bay Area bbox) ────────────────

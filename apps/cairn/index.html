@@ -484,22 +484,24 @@
             Sync your hikes to a private GitHub repository. Create a repo named <strong>personal-data</strong> and a Personal Access Token with <strong>repo</strong> scope at
             <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">github.com/settings/tokens</a>.
           </div>
-          <div class="field-group">
-            <div class="field-label">GitHub Username</div>
-            <input class="text-input" id="gh-username" type="text" placeholder="your-username" autocorrect="off" autocapitalize="off" spellcheck="false"/>
-          </div>
-          <div class="field-group">
-            <div class="field-label">Repository Name</div>
-            <input class="text-input" id="gh-repo" type="text" placeholder="personal-data" autocorrect="off" autocapitalize="off" spellcheck="false"/>
-          </div>
-          <div class="field-group">
-            <div class="field-label">Personal Access Token</div>
-            <input class="text-input" id="gh-token" type="password" placeholder="ghp_…" autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false" name="cairn-gh-token"/>
-          </div>
-          <button class="btn-primary" onclick="saveGitHubSettings()">Save &amp; Test Connection</button>
-          <div id="gh-status-row" style="display:none;margin-top:10px;">
-            <div class="settings-hint" id="gh-status-msg"></div>
-          </div>
+          <form onsubmit="event.preventDefault(); saveGitHubSettings();">
+            <div class="field-group">
+              <div class="field-label">GitHub Username</div>
+              <input class="text-input" id="gh-username" type="text" placeholder="your-username" autocorrect="off" autocapitalize="off" spellcheck="false" autocomplete="username" name="username"/>
+            </div>
+            <div class="field-group">
+              <div class="field-label">Repository Name</div>
+              <input class="text-input" id="gh-repo" type="text" placeholder="personal-data" autocorrect="off" autocapitalize="off" spellcheck="false" autocomplete="off" name="gh-repo-input"/>
+            </div>
+            <div class="field-group">
+              <div class="field-label">Personal Access Token</div>
+              <input class="text-input" id="gh-token" type="password" placeholder="ghp_…" autocomplete="current-password" autocorrect="off" autocapitalize="off" spellcheck="false" name="password"/>
+            </div>
+            <button type="submit" class="btn-primary">Save &amp; Test Connection</button>
+            <div id="gh-status-row" style="display:none;margin-top:10px;">
+              <div class="settings-hint" id="gh-status-msg"></div>
+            </div>
+          </form>
         </div>
       </div>
 
@@ -580,12 +582,15 @@ setAppHeight();
 window.addEventListener('resize', setAppHeight);
 window.visualViewport?.addEventListener('resize', setAppHeight);
 
+// ── DOM helper ────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
 // ── constants ─────────────────────────────────────────────────────
 const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v37';
+const APP_VERSION = 'cairn-v38';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -647,8 +652,8 @@ function rawElev(m)   { return units==='imperial' ? toFt(m)  : m; }
 function setUnits(u) {
   units = u;
   try { localStorage.setItem(UNITS_KEY, u); } catch {}
-  document.getElementById('btn-imperial').classList.toggle('active', u==='imperial');
-  document.getElementById('btn-metric').classList.toggle('active',   u==='metric');
+  $('btn-imperial').classList.toggle('active', u==='imperial');
+  $('btn-metric').classList.toggle('active',   u==='metric');
   updateStats(); updateSidebar(); updateCoverageUI();
   if (elevChart && elevChart._hikeIdx !== undefined) showElev(elevChart._hikeIdx);
 }
@@ -896,6 +901,11 @@ const baseTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/s
 map.createPane('ridgePane');
 map.getPane('ridgePane').style.zIndex = 350; // below hike layers
 
+function fitAllHikes() {
+  const all = hikes.flatMap(h => h.coords.map(c => [c.lat, c.lon]));
+  if (all.length) map.fitBounds(all, { padding: [40, 40] });
+}
+
 // ── geo math ─────────────────────────────────────────────────────
 function haversine(a, b) {
   const R=6371, dLat=(b.lat-a.lat)*Math.PI/180, dLon=(b.lon-a.lon)*Math.PI/180;
@@ -905,22 +915,6 @@ function haversine(a, b) {
 function distM(a, b) { // fast flat-earth metres
   const latM=111320, lonM=111320*Math.cos(a.lat*Math.PI/180);
   return Math.hypot((b.lat-a.lat)*latM, (b.lon-a.lon)*lonM);
-}
-// Perpendicular distance from p to the segment a→b, in metres.
-// Ridge Trail vertices are RDP-simplified to ~11 m tolerance, which leaves a
-// median gap of 73 m between them (p99 365 m, max 2.4 km). Nearest-*vertex*
-// matching would therefore call a hike walking straight down a long ridge
-// edge "off trail", so anything comparing a point to the ridge must measure
-// against the edge, not its endpoints.
-function distToSegM(p, a, b) {
-  const latM=111320, lonM=111320*Math.cos(p.lat*Math.PI/180);
-  const px=(p.lon-a.lon)*lonM, py=(p.lat-a.lat)*latM;
-  const bx=(b.lon-a.lon)*lonM, by=(b.lat-a.lat)*latM;
-  const len2 = bx*bx + by*by;
-  if (len2 === 0) return Math.hypot(px, py);
-  // Clamped projection parameter: 0 = at a, 1 = at b.
-  const t = Math.max(0, Math.min(1, (px*bx + py*by) / len2));
-  return Math.hypot(px - t*bx, py - t*by);
 }
 
 // ── Trailing Vehicle Auto-Trim ────────────────────────────────────
@@ -1067,7 +1061,7 @@ function toggleRidgeTrail(on) {
   // renderAll() re-adds ridgeLayer and recomputes coverage on its own.
   if (!on) {
     if (ridgeLayer) map.removeLayer(ridgeLayer);
-    document.getElementById('ridge-status').textContent = '';
+    $('ridge-status').textContent = '';
     renderAll();
     renderChip();
     return;
@@ -1079,7 +1073,7 @@ function toggleRidgeTrail(on) {
 }
 
 function setRidgeStatus(msg) {
-  document.getElementById('ridge-status').textContent = msg;
+  $('ridge-status').textContent = msg;
 }
 
 // Route geometry, built without touching the map. Kept separate from layer
@@ -1620,7 +1614,7 @@ function updateCoverageUI() { renderChip(); }
 // by default. BART segment only renders when the Ridge Trail toggle
 // is on and coverage has been computed.
 function renderChip() {
-  const chip = document.getElementById('stats-chip');
+  const chip = $('stats-chip');
   if (!hikes.length) { chip.classList.remove('visible', 'expanded'); return; }
   const dk = hikes.reduce((s,h)=>s+h.distKm, 0);
   const em = hikes.reduce((s,h)=>s+h.elevGain, 0);
@@ -1629,23 +1623,23 @@ function renderChip() {
   // Collapsed uses a K-suffix (thousands) to stay one-line-wide on mobile;
   // expanded shows the full-precision integer.
   const elevStrShort = (rawElev(em) / 1000).toFixed(1) + 'K ' + elevUnit();
-  document.getElementById('chip-dist').textContent = distStr;
-  document.getElementById('chip-elev').textContent = elevStrLong;
-  const totalLine = document.getElementById('chip-total-line');
+  $('chip-dist').textContent = distStr;
+  $('chip-elev').textContent = elevStrLong;
+  const totalLine = $('chip-total-line');
   totalLine.textContent = '';
   const lblTotal = document.createElement('span');
   lblTotal.className = 'chip-label';
   lblTotal.textContent = 'TOTAL';
   totalLine.append(lblTotal, distStr + ' · ' + elevStrShort);
-  const bartGroup = document.getElementById('chip-bart-group');
-  const bartLine = document.getElementById('chip-bart-line');
+  const bartGroup = $('chip-bart-group');
+  const bartLine = $('chip-bart-line');
   const bartOn = ridgeVisible && ridgeCoverageKm !== null && ridgeTotalKm !== null;
   if (bartOn) {
     const pct = Math.min(100, (ridgeCoverageKm / ridgeTotalKm) * 100);
     const miles = rawDist(ridgeCoverageKm).toFixed(1) + '/' + rawDist(ridgeTotalKm).toFixed(1) + ' ' + distUnit();
-    document.getElementById('chip-bart-val').textContent = miles;
-    document.getElementById('chip-bar-fill').style.width = pct.toFixed(1) + '%';
-    document.getElementById('chip-note').textContent = 'within ' + COVERAGE_M + ' m of Ridge Trail';
+    $('chip-bart-val').textContent = miles;
+    $('chip-bar-fill').style.width = pct.toFixed(1) + '%';
+    $('chip-note').textContent = 'within ' + COVERAGE_M + ' m of Ridge Trail';
     bartGroup.style.display = 'block';
     bartLine.textContent = '';
     const lblBart = document.createElement('span');
@@ -1663,10 +1657,8 @@ function renderChip() {
 // ── distance bands ────────────────────────────────────────────────
 // Fixed-threshold distance classification (miles, regardless of the
 // active unit toggle). Used only to color the mileage in the sidebar
-// hike list — map lines render uniformly.
-const KM_PER_MI = 1.609344;
 function distBandClass(distKm) {
-  const mi = distKm / KM_PER_MI;
+  const mi = toMi(distKm);
   if (mi < 5)  return 'dist-1';
   if (mi < 10) return 'dist-2';
   if (mi < 15) return 'dist-3';
@@ -1824,7 +1816,7 @@ function renderAll() {
     const pts = snapped ? snapped.coords : h.coords;
     const ll=pts.map(c=>[c.lat,c.lon]);
     h.lines = [];
-    const isSel = (i === selectedHikeIndex);
+    const isSel = (h.id === selectedHikeId);
     const bindHit = (layer, defaultAnchor) => {
       layer.on('click', (e) => {
         if (Date.now() < suppressClickUntil) return;
@@ -1894,8 +1886,8 @@ function renderAll() {
   });
   updateSidebar(); updateStats();
   if(ridgeVisible&&ridgeSegments) recomputeCoverage();
-  if (selectedHikeIndex !== null && selectedHikeIndex < hikes.length) {
-    selectHike(selectedHikeIndex);
+  if (selectedHikeId && hikes.some(h => h.id === selectedHikeId)) {
+    selectHike(selectedHikeId);
   }
 }
 
@@ -1947,16 +1939,28 @@ function toggleSnap(i) {
   applyOp('update-hike', h.id, { meta: { snapped: !h.snapped } });
 }
 
-let selectedHikeIndex = null;
-function selectHike(i){
-  selectedHikeIndex = (typeof i === 'number' && i >= 0 && i < hikes.length) ? i : null;
+let selectedHikeId = null;
+function selectedHikeIndex() {
+  if (!selectedHikeId) return null;
+  const idx = hikes.findIndex(h => h.id === selectedHikeId);
+  return idx >= 0 ? idx : null;
+}
+function selectHike(i) {
+  if (typeof i === 'string') {
+    selectedHikeId = hikes.some(h => h.id === i) ? i : null;
+  } else if (typeof i === 'number' && i >= 0 && i < hikes.length) {
+    selectedHikeId = hikes[i]?.id || null;
+  } else {
+    selectedHikeId = null;
+  }
+  const selIdx = selectedHikeIndex();
   document.querySelector('.hike-item.active')?.classList.remove('active');
-  if (selectedHikeIndex !== null) {
-    document.querySelector(`.hike-item[data-i="${selectedHikeIndex}"]`)?.classList.add('active');
+  if (selIdx !== null) {
+    document.querySelector(`.hike-item[data-i="${selIdx}"]`)?.classList.add('active');
   }
   const ridgeActive = ridgeVisible && ensureRidgeData();
-  hikes.forEach((h, idx) => {
-    const isSelected = (idx === selectedHikeIndex);
+  hikes.forEach((h) => {
+    const isSelected = (h.id === selectedHikeId);
     if (h.lines) {
       for (const item of h.lines) {
         const opacity = isSelected
@@ -1980,11 +1984,8 @@ function selectHike(i){
     }
   });
 }
-function highlightSidebar(i){
-  selectHike(i);
-}
 function updateSidebar(){
-  const list=document.getElementById('hike-list');
+  const list=$('hike-list');
   if(!hikes.length){list.innerHTML='<div class="empty-sidebar">No hikes loaded yet</div>';return;}
   list.innerHTML=hikes.map((h,i)=>`
     <div class="hike-item" data-i="${i}" onclick="focusHike(${i})">
@@ -1992,8 +1993,8 @@ function updateSidebar(){
       <div class="hike-meta"><span class="hike-dist ${distBandClass(h.distKm)}">${dispDist(h.distKm)}</span></div>
       <div class="hike-date">${esc(h.date || 'No date')}</div>
     </div>`).join('');
-  document.getElementById('hike-count').textContent=hikes.length;
-  document.getElementById('add-more-btn').style.display='block';
+  $('hike-count').textContent=hikes.length;
+  $('add-more-btn').style.display='block';
 }
 function updateStats(){ renderChip(); }
 function focusHike(i){
@@ -2010,18 +2011,18 @@ function focusHike(i){
 // ── narrow-width hike list overlay ────────────────────────────────
 const narrowMql = window.matchMedia('(max-width: 899px)');
 function isNarrow() { return narrowMql.matches; }
-function openHikeList()  { document.getElementById('sidebar').classList.add('open'); }
-function closeHikeList() { document.getElementById('sidebar').classList.remove('open'); }
+function openHikeList()  { $('sidebar').classList.add('open'); }
+function closeHikeList() { $('sidebar').classList.remove('open'); }
 // Clean up the overlay class when crossing the breakpoint so wide layout
 // isn't stuck with a transform-hidden sidebar.
 narrowMql.addEventListener('change', e => {
-  if (!e.matches) document.getElementById('sidebar').classList.remove('open');
+  if (!e.matches) $('sidebar').classList.remove('open');
 });
 
 // ── elevation profile ─────────────────────────────────────────────
 function showElev(i){
   const h=hikes[i]; if(!h) return;
-  map.closePopup(); highlightSidebar(i);
+  map.closePopup(); selectHike(i);
   const coords=h.coords, step=Math.max(1,Math.floor(coords.length/300));
   // Sample every `step`th point, but always include the final point so the
   // x-axis reaches the full distance (its last tick is the hike total).
@@ -2042,10 +2043,10 @@ function showElev(i){
   // The subsampled cumulative undershoots the full-resolution total, so pin the
   // final label to the hike's real distance — matches the sidebar/chip figure.
   if(labels.length) labels[labels.length-1]=rawDist(h.distKm).toFixed(2);
-  document.getElementById('elev-label').textContent='Elevation · '+h.name;
-  document.getElementById('elev-panel').classList.add('open');
+  $('elev-label').textContent='Elevation · '+h.name;
+  $('elev-panel').classList.add('open');
   if(elevChart) elevChart.destroy();
-  const ctx=document.getElementById('elev-canvas').getContext('2d');
+  const ctx=$('elev-canvas').getContext('2d');
   elevChart=new Chart(ctx,{type:'line',data:{labels,datasets:[{data:elevs,borderColor:h.color||'#8b4513',borderWidth:1.5,fill:true,
     backgroundColor:c=>{const g=c.chart.ctx.createLinearGradient(0,0,0,c.chart.height);g.addColorStop(0,(h.color||'#8b4513')+'55');g.addColorStop(1,(h.color||'#8b4513')+'05');return g;},
     pointRadius:0,tension:.3}]},
@@ -2073,7 +2074,7 @@ function showElev(i){
   // Clear the map marker when the cursor leaves the chart area (onHover only
   // fires while over the canvas). Assigned (not addEventListener) so repeated
   // showElev calls don't stack listeners.
-  document.getElementById('elev-canvas').onmouseleave=hideElevHoverPoint;
+  $('elev-canvas').onmouseleave=hideElevHoverPoint;
 }
 // Single reusable marker highlighting the elevation-hover point on the map.
 // White halo + dark centre so it stays legible over any palette-colored track.
@@ -2092,7 +2093,7 @@ function hideElevHoverPoint(){
   if(elevHoverMarker&&map.hasLayer(elevHoverMarker)) map.removeLayer(elevHoverMarker);
 }
 function closeElev(){
-  document.getElementById('elev-panel').classList.remove('open');
+  $('elev-panel').classList.remove('open');
   if(elevChart){elevChart.destroy();elevChart=null;}
   hideElevHoverPoint();
   if (!isHikePopupOpen()) {
@@ -2119,7 +2120,7 @@ function saveLocateLog(entries) {
   try { localStorage.setItem(LOCATE_LOG_KEY, JSON.stringify(entries)); } catch {}
 }
 function renderLocateLog() {
-  const el = document.getElementById('locate-log');
+  const el = $('locate-log');
   if (!el) return;
   const entries = loadLocateLog();
   el.textContent = entries.length ? entries.join('\n') : 'No location activity yet.';
@@ -2142,7 +2143,7 @@ function locateMe() {
     appendLocateLog('✗ ' + msg);
     return;
   }
-  const btn = document.getElementById('locate-btn');
+  const btn = $('locate-btn');
   locateBusy = true;
   if (btn) btn.disabled = true;
   navigator.geolocation.getCurrentPosition(
@@ -2260,11 +2261,6 @@ const TILE_PREFETCH_ZOOMS = [10, 11, 12, 13, 14, 15];
 // starve the user's own map fetches when they pan around mid-prefetch.
 const TILE_FETCH_CONCURRENCY = 3;
 const TILE_PREFETCH_DELAY_MS = 5000;
-const TILE_SUBDOMAINS = ['a', 'b', 'c', 'd'];
-// Match Leaflet's L.Browser.retina: DPR ≥ 2 → request @2x tiles. Pre-fetching
-// the wrong variant means runtime cache misses, so we mirror the browser's
-// own decision here.
-const TILE_RETINA_SUFFIX = (typeof window !== 'undefined' && window.devicePixelRatio > 1) ? '@2x' : '';
 
 let tilePrefetchRunning = false;
 let tilePrefetchPaused = false;
@@ -2321,13 +2317,7 @@ function tileUrl(z, x, y) {
 }
 
 function metersBetween(aLat, aLon, bLat, bLon) {
-  const R = 6371000;
-  const dLat = (bLat - aLat) * Math.PI / 180;
-  const dLon = (bLon - aLon) * Math.PI / 180;
-  const lat1 = aLat * Math.PI / 180;
-  const lat2 = bLat * Math.PI / 180;
-  const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  return haversine({ lat: aLat, lon: aLon }, { lat: bLat, lon: bLon }) * 1000;
 }
 
 // Walk a segment of [lat, lon] points at zoom z, dropping every tile the
@@ -2383,7 +2373,7 @@ function computeTileTargetSet() {
 }
 
 function setTileStatus(text) {
-  const el = document.getElementById('tile-status');
+  const el = $('tile-status');
   if (el) el.textContent = text;
 }
 function refreshTileStatus() {
@@ -2528,7 +2518,7 @@ function tilePrefetchPauseToggle() {
   refreshTileStatus();
 }
 function updatePauseBtn() {
-  const btn = document.getElementById('tile-pause-btn');
+  const btn = $('tile-pause-btn');
   if (btn) btn.textContent = tilePrefetchPaused ? 'Resume' : 'Pause';
 }
 async function tilePrefetchForce() {
@@ -2545,7 +2535,7 @@ async function tileClearCache() {
   while (tilePrefetchRunning) await new Promise(r => setTimeout(r, 50));
   try {
     await caches.delete(TILES_CACHE);
-    await caches.delete('cairn-tiles-base-v1');
+    await caches.delete('cairn-tiles-base-v2');
   } catch {}
   setTileBytes(0);
   tileTargetCount = 0;
@@ -2594,9 +2584,9 @@ function clearAll(){
 // in the same state as Clear All, and undoing back up restores the chrome.
 function syncEmptyState(){
   const empty = !hikes.length;
-  document.getElementById('drop-zone').classList.toggle('hidden', !empty);
-  document.getElementById('add-more-btn').style.display = empty ? 'none' : 'block';
-  if (empty) document.getElementById('hike-count').textContent = '0';
+  $('drop-zone').classList.toggle('hidden', !empty);
+  $('add-more-btn').style.display = empty ? 'none' : 'block';
+  if (empty) $('hike-count').textContent = '0';
 }
 
 // Delete a single hike from the map popup, with a 30 s Undo. The delete is a
@@ -2617,6 +2607,7 @@ function deleteHike(i){
   };
   map.closePopup();
   closeElev();
+  if (selectedHikeId === id) selectHike(null);
   applyOp('delete-hike', id, null);
   syncEmptyState();
   showUndoToast(`Deleted “${h.name}”`, () => {
@@ -2629,10 +2620,10 @@ function deleteHike(i){
 // call (no listener stacking) and restarts the 30 s auto-dismiss timer.
 let toastTimer = null;
 function showUndoToast(message, onUndo){
-  const toast = document.getElementById('toast');
+  const toast = $('toast');
   const dismiss = () => { toast.classList.remove('show'); clearTimeout(toastTimer); toastTimer = null; };
-  document.getElementById('toast-label').textContent = message;
-  document.getElementById('toast-undo').onclick = () => { dismiss(); onUndo(); };
+  $('toast-label').textContent = message;
+  $('toast-undo').onclick = () => { dismiss(); onUndo(); };
   toast.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(dismiss, 30000);
@@ -2692,9 +2683,8 @@ async function loadFiles(files){
     apply();
   }
 
-  document.getElementById('drop-zone').classList.add('hidden');
-  const all = hikes.flatMap(h => h.coords.map(c => [c.lat, c.lon]));
-  if (all.length) map.fitBounds(all, { padding: [40, 40] });
+  $('drop-zone').classList.add('hidden');
+  fitAllHikes();
   if (ridgeVisible && ridgeSegments) recomputeCoverage();
   // New hikes → new tiles to prefetch; re-schedule so the Offline Tiles
   // section picks up the larger target set without waiting for next boot.
@@ -2702,17 +2692,17 @@ async function loadFiles(files){
 }
 
 // ── events ────────────────────────────────────────────────────────
-document.getElementById('file-input').addEventListener('change',e=>{if(e.target.files.length)loadFiles(e.target.files);e.target.value='';});
-const dz=document.getElementById('drop-zone');
+$('file-input').addEventListener('change',e=>{if(e.target.files.length)loadFiles(e.target.files);e.target.value='';});
+const dz=$('drop-zone');
 dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
 dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
 dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');loadFiles(e.dataTransfer.files);});
-document.getElementById('map').addEventListener('dragover',e=>e.preventDefault());
-document.getElementById('map').addEventListener('drop',e=>{e.preventDefault();loadFiles(e.dataTransfer.files);});
+$('map').addEventListener('dragover',e=>e.preventDefault());
+$('map').addEventListener('drop',e=>{e.preventDefault();loadFiles(e.dataTransfer.files);});
 
 // Stats chip: tap collapsed pill to expand, ✕ (or map click) to collapse.
 (function wireChip(){
-  const chip = document.getElementById('stats-chip');
+  const chip = $('stats-chip');
   chip.querySelector('.chip-collapsed').addEventListener('click', e => {
     e.stopPropagation();
     chip.classList.add('expanded');
@@ -2729,7 +2719,7 @@ document.getElementById('map').addEventListener('drop',e=>{e.preventDefault();lo
 
 // Coordinate chip: click-and-hold (pointer/touch) + instant right-click (contextmenu)
 (function wireCoordHold() {
-  const mapEl = document.getElementById('map');
+  const mapEl = $('map');
   let holdTimer = null;
   let startX = 0;
   let startY = 0;
@@ -2805,10 +2795,10 @@ document.getElementById('map').addEventListener('drop',e=>{e.preventDefault();lo
   // Clear hike selection when popup is closed (unless elevation profile is active)
   map.on('popupclose', (e) => {
     if (e.popup === coordPopup) return;
-    const elevOpen = document.getElementById('elev-panel')?.classList.contains('open');
+    const elevOpen = $('elev-panel')?.classList.contains('open');
     if (elevOpen) return;
     setTimeout(() => {
-      const elevStillOpen = document.getElementById('elev-panel')?.classList.contains('open');
+      const elevStillOpen = $('elev-panel')?.classList.contains('open');
       if (!isHikePopupOpen() && !elevStillOpen) {
         selectHike(null);
       }
@@ -2819,7 +2809,7 @@ document.getElementById('map').addEventListener('drop',e=>{e.preventDefault();lo
 // ── boot ──────────────────────────────────────────────────────────
 setUnits(localStorage.getItem(UNITS_KEY) === 'metric' ? 'metric' : 'imperial');
 const ridgeInitial = localStorage.getItem(RIDGE_KEY) !== '0';
-document.getElementById('ridge-checkbox').checked = ridgeInitial;
+$('ridge-checkbox').checked = ridgeInitial;
 if (ridgeInitial) toggleRidgeTrail(true);
 ensureDeviceId();
 loadSnapshot();
@@ -2833,10 +2823,9 @@ if (snapshot) {
 }
 materializeInto(hikes);
 if (hikes.length) {
-  document.getElementById('drop-zone').classList.add('hidden');
+  $('drop-zone').classList.add('hidden');
   renderAll();
-  const all = hikes.flatMap(h => h.coords.map(c => [c.lat, c.lon]));
-  if (all.length) map.fitBounds(all, { padding: [40, 40] });
+  fitAllHikes();
 }
 
 // Re-render after the sync module pulls remote ops and merges them in.
@@ -2848,14 +2837,13 @@ function onOpsMerged(mergedOps) {
     : mergedOps.slice();
   saveOps();
   materializeInto(hikes);
-  if (hikes.length) document.getElementById('drop-zone').classList.add('hidden');
+  if (hikes.length) $('drop-zone').classList.add('hidden');
   renderAll();
   // First-open-on-a-new-device case: we arrived with no hikes, the pull
   // brought some in — zoom the map to show them, otherwise the user sees
   // the default SF Bay view and has to pan to find what synced.
   if (!hadHikes && hikes.length) {
-    const all = hikes.flatMap(h => h.coords.map(c => [c.lat, c.lon]));
-    if (all.length) map.fitBounds(all, { padding: [40, 40] });
+    fitAllHikes();
   }
   // Remote ops can introduce hikes from other devices — re-schedule the
   // prefetch so their tiles get queued up too.
@@ -2896,7 +2884,7 @@ window.cairnState = {
   onOpsMerged,
   isOpCoveredBySnapshot,
   absorbIntoSnapshot,
-  dropZoneHide: () => document.getElementById('drop-zone').classList.add('hidden'),
+  dropZoneHide: () => $('drop-zone').classList.add('hidden'),
 };
 
 // onclick handlers in the HTML need these as globals; module scope doesn't
@@ -2925,7 +2913,8 @@ window.showCoordPopup = showCoordPopup;
 window.parseGPX = parseGPX;
 window.trimTrailingVehicle = trimTrailingVehicle;
 window.selectHike = selectHike;
-window.selectedHikeIndex = () => selectedHikeIndex;
+window.selectedHikeId = () => selectedHikeId;
+window.selectedHikeIndex = () => selectedHikeIndex();
 window.getClearestQuadrant = getClearestQuadrant;
 window.getQuadrantPopupOptions = getQuadrantPopupOptions;
 window.computeDynamicOffset = computeDynamicOffset;
@@ -2939,6 +2928,8 @@ tilePrefetchSchedule();
 <!-- ══ SYNC MODULE GLUE ══════════════════════════════════════════════ -->
 <script type="module">
   import { PersonalSync } from './shared/personal-sync.mjs';
+
+  const $ = id => document.getElementById(id);
 
   const APP_NAME = 'cairn';
   const SETTINGS_KEY = 'cairn_gh_settings';
@@ -2978,7 +2969,7 @@ tilePrefetchSchedule();
     const ts = new Date().toTimeString().slice(0, 8);
     syncLog.push(`[${ts}] ${line}`);
     while (syncLog.length > SYNC_LOG_MAX) syncLog.shift();
-    const el = document.getElementById('sync-log');
+    const el = $('sync-log');
     if (el) {
       el.textContent = syncLog.join('\n');
       el.scrollTop = el.scrollHeight;
@@ -2986,8 +2977,8 @@ tilePrefetchSchedule();
   }
 
   function setStatus(kind, label) {
-    const pill = document.getElementById('sync-status');
-    const lbl = document.getElementById('sync-label');
+    const pill = $('sync-status');
+    const lbl = $('sync-label');
     if (!pill || !lbl) return;
     pill.classList.remove('syncing', 'ok', 'error');
     if (kind && kind !== 'local') pill.classList.add(kind);
@@ -3034,7 +3025,7 @@ tilePrefetchSchedule();
     const res = await fetch(snapshotUrl(settings), { headers: ghHeaders(settings.token) });
     if (res.status === 404) return { snapshot: null, sha: null };
     if (!res.ok) throw new Error(`snapshot GET ${res.status}`);
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     let b64 = data?.content;
     // Contents API returns empty content for files >1MB. Fall back to git blob API.
     if (!b64 && data?.sha) {
@@ -3043,7 +3034,7 @@ tilePrefetchSchedule();
         { headers: ghHeaders(settings.token) }
       );
       if (blobRes.ok) {
-        const blobData = await blobRes.json();
+        const blobData = await blobRes.json().catch(() => ({}));
         if (blobData?.encoding === 'base64') b64 = blobData.content;
       }
     }
@@ -3065,7 +3056,7 @@ tilePrefetchSchedule();
     });
     if (res.status === 409 || res.status === 422) return { status: 'conflict' };
     if (!res.ok) return { status: 'error', code: res.status };
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     return { status: 'ok', sha: data?.content?.sha };
   }
 
@@ -3278,18 +3269,18 @@ tilePrefetchSchedule();
   // ── settings modal + handlers ────────────────────────────────────
   window.openSettings = () => {
     const s = getSettings() || {};
-    document.getElementById('gh-username').value = s.username || '';
-    document.getElementById('gh-repo').value = s.repo || 'personal-data';
-    document.getElementById('gh-token').value = s.token || '';
-    document.getElementById('gh-status-row').style.display = 'none';
+    $('gh-username').value = s.username || '';
+    $('gh-repo').value = s.repo || 'personal-data';
+    $('gh-token').value = s.token || '';
+    $('gh-status-row').style.display = 'none';
 
     // Sync the Offline Tiles section to whatever the prefetch state is now.
-    const tileCb = document.getElementById('tile-prefetch-checkbox');
+    const tileCb = $('tile-prefetch-checkbox');
     if (tileCb && window.tilePrefetchEnabled) tileCb.checked = window.tilePrefetchEnabled();
     if (window.refreshTileStatus) window.refreshTileStatus();
     if (window.updateTilePauseBtn) window.updateTilePauseBtn();
     refreshPersistButton();
-    document.getElementById('modal-settings').classList.add('open');
+    $('modal-settings').classList.add('open');
   };
 
   // Reflect the bucket's persisted-storage state on the Storage button. The
@@ -3299,8 +3290,8 @@ tilePrefetchSchedule();
   // disabled with a "Persistent ✓" label whenever `persisted()` already says
   // we're good.
   async function refreshPersistButton() {
-    const btn = document.getElementById('btn-request-persistent');
-    const status = document.getElementById('persist-status');
+    const btn = $('btn-request-persistent');
+    const status = $('persist-status');
     if (!btn || !status) return;
     status.style.display = 'none';
     status.textContent = '';
@@ -3325,8 +3316,8 @@ tilePrefetchSchedule();
   }
 
   window.requestPersistent = async () => {
-    const btn = document.getElementById('btn-request-persistent');
-    const status = document.getElementById('persist-status');
+    const btn = $('btn-request-persistent');
+    const status = $('persist-status');
     if (!btn || !status || !navigator.storage?.persist) return;
     btn.disabled = true;
     btn.textContent = 'Requesting…';
@@ -3349,21 +3340,21 @@ tilePrefetchSchedule();
     status.style.display = 'block';
   };
   window.closeSettings = () => {
-    document.getElementById('modal-settings').classList.remove('open');
+    $('modal-settings').classList.remove('open');
   };
 
   function showGhStatus(msg, isError) {
-    const row = document.getElementById('gh-status-row');
-    const el = document.getElementById('gh-status-msg');
+    const row = $('gh-status-row');
+    const el = $('gh-status-msg');
     el.textContent = msg;
     el.style.color = isError ? '#ba1a1a' : 'var(--ink-soft)';
     row.style.display = 'block';
   }
 
   window.saveGitHubSettings = async () => {
-    const username = document.getElementById('gh-username').value.trim();
-    const repo = document.getElementById('gh-repo').value.trim();
-    const token = document.getElementById('gh-token').value.trim();
+    const username = $('gh-username').value.trim();
+    const repo = $('gh-repo').value.trim();
+    const token = $('gh-token').value.trim();
     if (!username || !repo || !token) {
       showGhStatus('All three fields are required.', true);
       return;
@@ -3435,9 +3426,9 @@ tilePrefetchSchedule();
     localStorage.removeItem(SNAPSHOT_SHA_KEY);
     setStatus(null, 'local');
     appendLog('✓ GitHub disconnected');
-    document.getElementById('gh-username').value = '';
-    document.getElementById('gh-token').value = '';
-    document.getElementById('gh-status-row').style.display = 'none';
+    $('gh-username').value = '';
+    $('gh-token').value = '';
+    $('gh-status-row').style.display = 'none';
   };
 
   // Unregister the SW and clear every cache, then reload. localStorage is
@@ -3491,7 +3482,7 @@ tilePrefetchSchedule();
   // the user that the browser may evict the bucket under pressure (which is
   // how data has been disappearing across browser restarts on ChromeOS).
   (function renderVersionLine() {
-    const el = document.getElementById('app-version-line');
+    const el = $('app-version-line');
     if (!el) return;
     let swCache = null;
     let persisted = null;
