@@ -1686,7 +1686,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v42';
+const APP_VERSION = 'marginalia-v43';
 
 const OPS_LS_KEY = 'marginalia_ops';
 const DEVICE_ID_KEY = 'marginalia_device_id';
@@ -3098,7 +3098,7 @@ window.requestPersistent = async () => {
 
 // ── Gemini OCR ──
 const GEMINI_SETTINGS_KEY = 'marginalia_gemini_key';
-const GEMINI_MODEL = 'gemini-3.7-flash';
+const GEMINI_MODEL = 'gemini-3.8-flash';
 
 function loadGeminiKey() {
   return localStorage.getItem(GEMINI_SETTINGS_KEY) || '';
