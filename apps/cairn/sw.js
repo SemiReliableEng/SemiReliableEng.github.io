@@ -11,9 +11,10 @@
 //   TILES_CACHE       — runtime + trail-prefetched tiles. Survives shell bumps
 //                       so the page-side prefetch (z10-15 along Ridge Trail +
 //                       imported hikes) doesn't get wiped on every UI release.
-const CACHE = 'cairn-v38';
+const CACHE = 'cairn-v40';
 const BASE_TILES_CACHE = 'cairn-tiles-base-v2';
 const TILES_CACHE = 'cairn-tiles-v1';
+const RIDGE_CACHE = 'cairn-ridge-v1';
 
 // App shell + local assets precached on install. Relative URLs so this
 // works under any path prefix (e.g. /apps/cairn/ on Pages).
@@ -106,14 +107,19 @@ self.addEventListener('install', (e) => {
           .map((u) => c.add(u).catch(() => {}))
       );
     });
-    await Promise.all([shell, base]);
+    const ridge = caches.open(RIDGE_CACHE).then(async (c) => {
+      if (!await c.match('./ridge-trail.json')) {
+        await c.add('./ridge-trail.json').catch(() => {});
+      }
+    });
+    await Promise.all([shell, base, ridge]);
     await self.skipWaiting();
   })());
 });
 
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
-    const keep = new Set([CACHE, BASE_TILES_CACHE, TILES_CACHE]);
+    const keep = new Set([CACHE, BASE_TILES_CACHE, TILES_CACHE, RIDGE_CACHE]);
     const keys = await caches.keys();
     await Promise.all(
       keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k))

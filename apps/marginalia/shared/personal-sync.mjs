@@ -37,16 +37,26 @@ function encodeBase64Utf8(str) {
   if (typeof Buffer !== 'undefined') {
     return Buffer.from(str, 'utf-8').toString('base64');
   }
-  // browser: utf-8 safe
-  return btoa(unescape(encodeURIComponent(str)));
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  const len = bytes.length;
+  for (let i = 0; i < len; i += 8192) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 8192, len)));
+  }
+  return btoa(bin);
 }
 
 function decodeBase64Utf8(b64) {
-  const cleaned = String(b64).replace(/\n/g, '');
+  const cleaned = String(b64).replace(/\s/g, '');
   if (typeof Buffer !== 'undefined') {
     return Buffer.from(cleaned, 'base64').toString('utf-8');
   }
-  return decodeURIComponent(escape(atob(cleaned)));
+  const bin = atob(cleaned);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) {
+    bytes[i] = bin.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 // ── Storage fallback ───────────────────────────────────────────────────────
@@ -103,6 +113,7 @@ class Sync {
     this._batchDepth = 0;
     this._batchMessage = null;
     this._shaKey = `${this.appName}_device_ops_sha`;
+    this._cachedFiles = new Map(); // filename -> { sha, ops }
   }
 
   // ── Events ──────────────────────────────────────────────────────────────
@@ -212,7 +223,7 @@ class Sync {
 
     this._status('syncing', '⟳ syncing');
     const message = opts.message || this._defaultMessage();
-    const content = encodeBase64Utf8(JSON.stringify(deviceOps, null, 2));
+    const content = encodeBase64Utf8(JSON.stringify(deviceOps));
 
     try {
       const newSha = await this._putWithRetry(settings, content, message);
@@ -322,11 +333,16 @@ class Sync {
       }
 
       const arrays = await Promise.all(opFiles.map(async (f) => {
+        const cached = this._cachedFiles.get(f.name);
+        if (cached && cached.sha === f.sha) {
+          return cached.ops;
+        }
+
         const fileUrl = this._contentsUrl(settings, `ops/${f.name}`);
         const fileRes = await this.fetch(fileUrl, {
           method: 'GET', headers: this._headers(settings.token),
         });
-        if (!fileRes.ok) return [];
+        if (!fileRes.ok) return cached ? cached.ops : [];
         const fileData = await fileRes.json();
         let b64 = fileData?.content;
         // Contents API returns empty content (encoding:"none") for files > 1MB.
@@ -342,17 +358,25 @@ class Sync {
               if (blobData?.encoding === 'base64') b64 = blobData.content;
             }
           } catch {
-            return [];
+            return cached ? cached.ops : [];
           }
         }
-        if (!b64) return [];
+        if (!b64) return cached ? cached.ops : [];
         try {
           const parsed = JSON.parse(decodeBase64Utf8(b64));
-          return Array.isArray(parsed) ? parsed : [];
+          const ops = Array.isArray(parsed) ? parsed : [];
+          this._cachedFiles.set(f.name, { sha: f.sha, ops });
+          return ops;
         } catch {
-          return [];
+          return cached ? cached.ops : [];
         }
       }));
+
+      // Prune cached files that were deleted remotely
+      const activeFileNames = new Set(opFiles.map(f => f.name));
+      for (const name of this._cachedFiles.keys()) {
+        if (!activeFileNames.has(name)) this._cachedFiles.delete(name);
+      }
 
       let allOps = arrays.flat();
 

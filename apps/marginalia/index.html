@@ -1686,7 +1686,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v47';
+const APP_VERSION = 'marginalia-v49';
 const $ = id => document.getElementById(id);
 
 const OPS_LS_KEY = 'marginalia_ops';
@@ -3245,7 +3245,9 @@ document.getElementById('cover-file').addEventListener('change', async function(
 function downscaleImage(file, maxPx) {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    const url = URL.createObjectURL(file);
     img.onload = () => {
+      URL.revokeObjectURL(url);
       let { width, height } = img;
       if (width > maxPx || height > maxPx) {
         const scale = maxPx / Math.max(width, height);
@@ -3258,8 +3260,11 @@ function downscaleImage(file, maxPx) {
       canvas.getContext('2d').drawImage(img, 0, 0, width, height);
       resolve(canvas);
     };
-    img.onerror = reject;
-    img.src = URL.createObjectURL(file);
+    img.onerror = (err) => {
+      URL.revokeObjectURL(url);
+      reject(err);
+    };
+    img.src = url;
   });
 }
 
@@ -4219,7 +4224,69 @@ async function transcribeBlob(blob) {
   }
 }
 
+let _transcribeWorker = null;
+let _workerMsgId = 0;
+const _pendingWorkerCalls = new Map();
+
+function getTranscribeWorker() {
+  if (!_transcribeWorker && typeof Worker !== 'undefined') {
+    try {
+      _transcribeWorker = new Worker('./transcribe-worker.mjs', { type: 'module' });
+      _transcribeWorker.onmessage = (e) => {
+        const { id, type, progress, status, text, error } = e.data || {};
+        const pending = _pendingWorkerCalls.get(id);
+        if (!pending) return;
+        if (type === 'progress') {
+          pending.onProgress?.(progress);
+        } else if (type === 'status' && status === 'transcribing') {
+          pending.onTranscribing?.();
+        } else if (type === 'result') {
+          _pendingWorkerCalls.delete(id);
+          pending.resolve(text);
+        } else if (type === 'error') {
+          _pendingWorkerCalls.delete(id);
+          pending.reject(new Error(error));
+        }
+      };
+      _transcribeWorker.onerror = (err) => {
+        console.error('[marginalia worker error]:', err);
+        for (const [, pending] of _pendingWorkerCalls.entries()) {
+          pending.reject(err);
+        }
+        _pendingWorkerCalls.clear();
+        _transcribeWorker = null;
+      };
+    } catch (err) {
+      console.warn('[marginalia] module worker unavailable, falling back to main thread:', err);
+      _transcribeWorker = null;
+    }
+  }
+  return _transcribeWorker;
+}
+
 async function transcribeWithWhisperLocal(samples) {
+  const worker = getTranscribeWorker();
+  if (worker) {
+    return new Promise((resolve, reject) => {
+      const id = ++_workerMsgId;
+      _pendingWorkerCalls.set(id, {
+        resolve,
+        reject,
+        onProgress: (p) => {
+          setRecMode('processing', `Downloading model… ${Math.round(p)}%`);
+        },
+        onTranscribing: () => {
+          setRecMode('processing', 'Transcribing…');
+        },
+      });
+      try {
+        worker.postMessage({ id, type: 'transcribe', samples }, [samples.buffer]);
+      } catch {
+        worker.postMessage({ id, type: 'transcribe', samples });
+      }
+    });
+  }
+
   const asr = await getWhisper(p => {
     if (p.status === 'progress' && typeof p.progress === 'number') {
       setRecMode('processing', `Downloading model… ${Math.round(p.progress)}%`);

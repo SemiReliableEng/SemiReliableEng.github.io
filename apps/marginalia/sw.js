@@ -1,5 +1,6 @@
 // Marginalia Service Worker
-const CACHE = 'marginalia-v47';
+const CACHE = 'marginalia-v49';
+const VENDOR_CACHE = 'marginalia-vendor-v1';
 
 // First-party app shell. Fetched with cache:'reload' on install (see below).
 const APP_SHELL = [
@@ -8,6 +9,7 @@ const APP_SHELL = [
   '/apps/marginalia/manifest.json',
   '/apps/marginalia/shared/personal-sync.mjs',
   '/apps/marginalia/transcribe.mjs',
+  '/apps/marginalia/transcribe-worker.mjs',
 ];
 
 // Pinned third-party assets. Versions pinned in URLs (and mirrored in
@@ -46,14 +48,19 @@ const VENDORED = [
 // line shows the new SW. The hard-reload-shows-vN-but-normal-reload-shows-
 // v(N-1) symptom is exactly this race.
 //
-// VENDORED uses default cache policy: the URLs are version-pinned and
-// immutable, so HTTP-cache reuse across SW upgrades avoids re-downloading
-// ~15MB of Tesseract assets every time CACHE bumps.
+// VENDORED uses a dedicated VENDOR_CACHE bucket so ~15MB of immutable WASM
+// and model binaries are preserved across shell releases.
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
-    const cache = await caches.open(CACHE);
-    await cache.addAll(APP_SHELL.map(u => new Request(u, { cache: 'reload' })));
-    await cache.addAll(VENDORED);
+    const shellCache = await caches.open(CACHE);
+    await shellCache.addAll(APP_SHELL.map(u => new Request(u, { cache: 'reload' })));
+    const vendorCache = await caches.open(VENDOR_CACHE);
+    const existing = new Set((await vendorCache.keys()).map(r => r.url));
+    await Promise.allSettled(
+      VENDORED
+        .filter(u => !existing.has(u))
+        .map(u => vendorCache.add(u).catch(() => {}))
+    );
     await self.skipWaiting();
   })());
 });
@@ -84,13 +91,16 @@ self.addEventListener('notificationclick', e => {
   })());
 });
 
-// Activate: clean up old caches
+// Activate: clean up old caches while preserving VENDOR_CACHE
 self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
+  e.waitUntil((async () => {
+    const keep = new Set([CACHE, VENDOR_CACHE]);
+    const keys = await caches.keys();
+    await Promise.all(
+      keys.filter(k => !keep.has(k)).map(k => caches.delete(k))
+    );
+    await self.clients.claim();
+  })());
 });
 
 // Fetch: network-first for API calls, cache-first for assets
@@ -128,7 +138,12 @@ self.addEventListener('fetch', e => {
         // "uncaught (in promise)" even though the response itself is fine.
         if (res.ok && e.request.method === 'GET') {
           const clone = res.clone();
-          caches.open(CACHE).then(cache => cache.put(e.request, clone));
+          const isVendor = url.hostname.includes('huggingface.co')
+            || url.hostname.includes('jsdelivr.net')
+            || url.hostname.includes('projectnaptha.com')
+            || url.hostname.includes('fonts.gstatic.com');
+          const targetCache = isVendor ? VENDOR_CACHE : CACHE;
+          caches.open(targetCache).then(cache => cache.put(e.request, clone));
         }
         return res;
       }).catch(() => {
