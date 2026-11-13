@@ -1686,7 +1686,7 @@
 // page so you can see which build is live on each device without opening
 // DevTools (useful on mobile PWAs, where the service worker cache can lag
 // behind a deploy and leave the old HTML in place for a refresh or two).
-const APP_VERSION = 'marginalia-v50';
+const APP_VERSION = 'marginalia-v51';
 const $ = id => document.getElementById(id);
 
 const OPS_LS_KEY = 'marginalia_ops';
@@ -3126,7 +3126,8 @@ window.requestPersistent = async () => {
 
 // ── Gemini OCR ──
 const GEMINI_SETTINGS_KEY = 'marginalia_gemini_key';
-const GEMINI_MODEL = 'gemini-3.8-flash';
+const GEMINI_MODEL = 'gemini-4-hydrogen';
+const GEMINI_GENERATION_CONFIG = { thinkingConfig: { thinkingLevel: 'low' } };
 
 function loadGeminiKey() {
   return localStorage.getItem(GEMINI_SETTINGS_KEY) || '';
@@ -3153,7 +3154,10 @@ async function saveGeminiSettings() {
         'Content-Type': 'application/json',
         'x-goog-api-key': key
       },
-      body: JSON.stringify({ contents: [{ parts: [{ text: 'Reply with just the word OK.' }] }] })
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: 'Reply with just the word OK.' }] }],
+        generationConfig: GEMINI_GENERATION_CONFIG
+      })
     });
     if (res.ok) {
       msg.textContent = '✓ Key is valid!';
@@ -3304,7 +3308,8 @@ async function ocrWithGemini(file) {
       contents: [{ parts: [
         { inlineData: { mimeType: 'image/jpeg', data: base64 } },
         { text: 'You are an OCR assistive tool helping a visually impaired user transcribe their own personal reading notes. Please read the text visible in this photo and transcribe it exactly. The page background will be white or black — if you see text with a colored highlight (yellow, blue, green, etc.) over it, transcribe ONLY the highlighted portion and ignore the rest. If nothing is highlighted, transcribe all visible text. Merge lines into natural paragraphs — do not insert line breaks where the original text simply wraps to the next line. Only preserve paragraph breaks where the author intended a new paragraph. Output only the transcribed text, nothing else.' }
-      ]}]
+      ]}],
+      generationConfig: GEMINI_GENERATION_CONFIG
     })
   });
 
@@ -4311,6 +4316,7 @@ async function transcribeWithGemini(samples) {
         { inlineData: { mimeType: 'audio/wav', data: base64 } },
         { text: 'Transcribe this audio recording of a spoken book quote or note, verbatim. Use natural punctuation and capitalization. Output only the transcribed words, nothing else.' },
       ]}],
+      generationConfig: GEMINI_GENERATION_CONFIG,
     }),
   });
   if (!res.ok) {
