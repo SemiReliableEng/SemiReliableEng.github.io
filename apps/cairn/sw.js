@@ -15,7 +15,7 @@
 //                       imported hikes) doesn't get wiped on every UI release.
 //   RIDGE_CACHE       — static Bay Area Ridge Trail geometry (ridge-trail.json);
 //                       preserved across shell bumps.
-const CACHE = 'cairn-v41';
+const CACHE = 'cairn-v42';
 const VENDOR_CACHE = 'cairn-vendor-v1';
 const BASE_TILES_CACHE = 'cairn-tiles-base-v2';
 const TILES_CACHE = 'cairn-tiles-v1';

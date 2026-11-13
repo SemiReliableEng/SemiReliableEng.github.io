@@ -996,21 +996,10 @@ export function buildRidgeCoverageSamples(ridgeSegments) {
   return samples;
 }
 
-export function recomputeCoverageKm(hikes, ridgeSegments = lastRidgeSegments, coverageSamples = null, hikePointsFn = null) {
-  if (!Array.isArray(hikes) || !hikes.length) return 0;
-
-  let samples = coverageSamples;
-  if (!samples || typeof samples.count !== 'number') {
-    if (ridgeSegments && typeof ridgeSegments.count === 'number') {
-      samples = ridgeSegments;
-    } else if (Array.isArray(ridgeSegments)) {
-      samples = coverageSamplesCache.get(ridgeSegments) || buildRidgeCoverageSamples(ridgeSegments);
-    }
-  }
-  if (!samples || !samples.count) return 0;
-
+function buildHikeCoverageGrid(hikes, hikePointsFn) {
   const BUCKET = RIDGE_BUCKET;
   const grid = new Map();
+  if (!Array.isArray(hikes) || !hikes.length) return grid;
 
   for (let i = 0; i < hikes.length; i++) {
     const h = hikes[i];
@@ -1030,46 +1019,63 @@ export function recomputeCoverageKm(hikes, ridgeSegments = lastRidgeSegments, co
       cell.push(c);
     }
   }
+  return grid;
+}
 
+function isNearHikeGrid(grid, rpLat, rpLon, bLat, bLon, lonM, maxD2) {
+  const latM = 111320;
+  for (let dlat = -2; dlat <= 2; dlat++) {
+    const latPart = ((bLat + dlat) & 0xFFFF) << 16;
+    for (let dlon = -2; dlon <= 2; dlon++) {
+      const pts = grid.get(latPart | ((bLon + dlon) & 0xFFFF));
+      if (!pts) continue;
+      for (let k = 0; k < pts.length; k++) {
+        const p = pts[k];
+        const pLat = Array.isArray(p) ? p[0] : p.lat;
+        const pLon = Array.isArray(p) ? p[1] : p.lon;
+        const dy = (pLat - rpLat) * latM;
+        const dx = (pLon - rpLon) * lonM;
+        if (dx * dx + dy * dy <= maxD2) return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function recomputeCoverageKm(hikes, ridgeSegments = lastRidgeSegments, coverageSamples = null, hikePointsFn = null) {
+  if (!Array.isArray(hikes) || !hikes.length) return 0;
+
+  let samples = coverageSamples;
+  if (!samples || typeof samples.count !== 'number') {
+    if (ridgeSegments && typeof ridgeSegments.count === 'number') {
+      samples = ridgeSegments;
+    } else if (Array.isArray(ridgeSegments)) {
+      samples = coverageSamplesCache.get(ridgeSegments) || buildRidgeCoverageSamples(ridgeSegments);
+    }
+  }
+  if (!samples || !samples.count) return 0;
+
+  const grid = buildHikeCoverageGrid(hikes, hikePointsFn);
   if (grid.size === 0) return 0;
 
-  const latM = 111320;
   const maxD2 = COVERAGE_M * COVERAGE_M;
   const { lats, lons, bLats, bLons, lonMs, pieceKms, count } = samples;
   let covered = 0;
 
   for (let i = 0; i < count; i++) {
-    const rpLat = lats[i];
-    const rpLon = lons[i];
-    const bLat = bLats[i];
-    const bLon = bLons[i];
-    const lonM = lonMs[i];
-    let hit = false;
-
-    for (let dlat = -2; dlat <= 2 && !hit; dlat++) {
-      const latPart = ((bLat + dlat) & 0xFFFF) << 16;
-      for (let dlon = -2; dlon <= 2; dlon++) {
-        const pts = grid.get(latPart | ((bLon + dlon) & 0xFFFF));
-        if (!pts) continue;
-        for (let k = 0; k < pts.length; k++) {
-          const p = pts[k];
-          const pLat = Array.isArray(p) ? p[0] : p.lat;
-          const pLon = Array.isArray(p) ? p[1] : p.lon;
-          const dy = (pLat - rpLat) * latM;
-          const dx = (pLon - rpLon) * lonM;
-          if (dx * dx + dy * dy <= maxD2) {
-            hit = true;
-            break;
-          }
-        }
-        if (hit) break;
-      }
+    if (isNearHikeGrid(grid, lats[i], lons[i], bLats[i], bLons[i], lonMs[i], maxD2)) {
+      covered += pieceKms[i];
     }
-
-    if (hit) covered += pieceKms[i];
   }
 
   return covered;
+}
+
+export function deterministicHikeColor(id, colors) {
+  if (!Array.isArray(colors) || !colors.length) return '';
+  const parsed = parseInt(String(id ?? '').slice(0, 8), 16);
+  const idx = Number.isFinite(parsed) ? (Math.abs(parsed) % colors.length) : 0;
+  return colors[idx];
 }
 
 // ── 6. Optimized Slippy Map Tile Math ────────────────────────────────────────

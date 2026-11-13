@@ -27,8 +27,13 @@ function pickAllowedMeta(m, baseMeta = null, isUpdate = false) {
   if (typeof m.elevGain === 'number' && Number.isFinite(m.elevGain)) out.elevGain = m.elevGain;
   if (isUpdate) {
     if (m.snapped !== undefined) out.snapped = !!m.snapped;
-  } else if (m.snapped) {
-    out.snapped = true;
+    if (typeof m.notes === 'string') {
+      if (m.notes === '') delete out.notes;
+      else out.notes = m.notes.slice(0, 4000);
+    }
+  } else {
+    if (m.snapped) out.snapped = true;
+    if (typeof m.notes === 'string' && m.notes) out.notes = m.notes.slice(0, 4000);
   }
   return out;
 }
@@ -367,7 +372,7 @@ export async function computeHikeId(coordsObjArray) {
 }
 
 // Flatten a snapshot live entry or op payload into the { id, name, date,
-// dateMs, distKm, elevGain, snapped, coords } shape that the render layer
+// dateMs, distKm, elevGain, snapped, notes, coords } shape that the render layer
 // expects. Optional `existingCoordsMap` reuses already-decoded `{lat,lon,ele}`
 // arrays for `id` so metadata edits / deletes don't re-unpack immutable tracks.
 export function hydrateHike(id, points, meta = {}, existingCoordsMap = null) {
@@ -397,6 +402,7 @@ export function hydrateHike(id, points, meta = {}, existingCoordsMap = null) {
     distKm: m.distKm,
     elevGain: m.elevGain,
     snapped: !!m.snapped,
+    notes: typeof m.notes === 'string' ? m.notes : '',
     coords,
   };
 }
@@ -521,6 +527,7 @@ export function materializeInto(target, snapshotOrOpts = null, opsArg = []) {
         if (typeof m.distKm === 'number' && Number.isFinite(m.distKm)) existing.distKm = m.distKm;
         if (typeof m.elevGain === 'number' && Number.isFinite(m.elevGain)) existing.elevGain = m.elevGain;
         if (m.snapped !== undefined) existing.snapped = !!m.snapped;
+        if (typeof m.notes === 'string') existing.notes = m.notes.slice(0, 4000);
       }
     } else if (op.op === 'delete-hike') {
       byId.delete(op.entityId);

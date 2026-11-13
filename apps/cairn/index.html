@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <meta name="theme-color" content="#372f29"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -76,9 +76,9 @@
     --ridge: var(--md-secondary);
     /* Distance-band colors for the sidebar hike list. Thresholds are in
        miles regardless of the unit toggle: <5 / 5–10 / 10–15 / >15. */
-    --dist-band-1: #5eaa4a;
+    --dist-band-1: #3b762a;
     --dist-band-2: #2d6b32;
-    --dist-band-3: #b8852a;
+    --dist-band-3: #8a5a10;
     --dist-band-4: #ba1a1a;
   }
 
@@ -142,6 +142,16 @@
   .sidebar-actions{display:flex;align-items:center;gap:10px;}
   .hike-count{font-family:var(--mono);font-size:10px;background:var(--md-primary-container);color:var(--md-on-primary-container);padding:2px 8px;border-radius:var(--md-shape-full);font-weight:500;}
   #hike-list{overflow-y:auto;flex:1;padding:8px 0;}
+  .sidebar-controls{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px;flex-shrink:0;}
+  #hike-search{width:100%;padding:7px 10px;background:var(--md-surface-container-lowest);border:1px solid var(--border);border-radius:var(--md-shape-sm);font-family:var(--sans);font-size:12px;color:var(--ink);outline:none;}
+  #hike-search:focus{border-color:var(--accent);}
+  .sidebar-filter-row{display:flex;gap:6px;align-items:center;}
+  #hike-sort{flex:1;min-width:0;padding:5px 8px;background:var(--md-surface-container-lowest);border:1px solid var(--border);border-radius:var(--md-shape-sm);font-family:var(--sans);font-size:11px;color:var(--ink);outline:none;}
+  #hike-sort:focus{border-color:var(--accent);}
+  #filter-ridge{flex:none;padding:5px 10px;background:transparent;border:1px solid var(--border);border-radius:var(--md-shape-full);font-family:var(--sans);font-size:11px;font-weight:500;color:var(--ink-soft);cursor:pointer;transition:all .15s;white-space:nowrap;}
+  #filter-ridge:hover{border-color:var(--md-primary);color:var(--md-primary);}
+  #filter-ridge.active,#filter-ridge[aria-pressed="true"]{background:var(--md-primary);border-color:var(--md-primary);color:var(--md-on-primary);}
+  .hike-elev{font-family:var(--mono);font-size:11px;color:var(--ink-soft);}
   #hike-list::-webkit-scrollbar{width:4px;}
   #hike-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:var(--md-shape-full);}
   .hike-item{padding:10px 16px;cursor:pointer;border-left:4px solid transparent;transition:all .2s;display:flex;flex-direction:column;gap:3px;margin:0 8px 4px;border-radius:var(--md-shape-sm);}
@@ -213,6 +223,8 @@
   .coord-popup .leaflet-popup-tip{background:var(--md-surface-container-highest);box-shadow:0 2px 6px var(--shadow);}
   .coord-pill{display:flex;align-items:center;gap:8px;padding:5px 6px 5px 12px;font-family:var(--mono);white-space:nowrap;}
   .coord-pill-text{font-size:11px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;user-select:all;}
+  .coord-pill-copy{background:var(--md-surface-container);border:1px solid var(--border);color:var(--ink);padding:4px 8px;border-radius:var(--md-shape-full);font-family:var(--sans);font-size:11px;font-weight:500;cursor:pointer;line-height:1;transition:background .15s;}
+  .coord-pill-copy:hover{background:var(--md-surface-container-high);}
   .coord-pill-link{display:inline-flex;align-items:center;gap:4px;background:var(--md-primary);color:var(--md-on-primary);padding:5px 10px;border-radius:var(--md-shape-full);font-family:var(--sans);font-size:11px;font-weight:500;text-decoration:none;line-height:1;transition:background .15s,opacity .15s;}
   .coord-pill-link:hover{background:var(--md-on-primary-container);color:#fff;}
   .coord-pill-link svg{width:11px;height:11px;flex-shrink:0;}
@@ -233,8 +245,18 @@
   .popup-actions{display:flex;gap:6px;margin-top:12px;}
   .popup-elev-btn{flex:1;padding:8px;background:var(--md-primary-container);border:none;border-radius:var(--md-shape-md);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);color:var(--md-on-primary-container);transition:all .2s;}
   .popup-elev-btn:hover{background:var(--md-primary);color:var(--md-on-primary);box-shadow:var(--md-elevation-1);}
+  .popup-edit-btn{flex:none;padding:8px 10px;background:var(--md-surface-container-high);border:none;border-radius:var(--md-shape-md);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);color:var(--ink);transition:all .2s;}
+  .popup-edit-btn:hover{background:var(--md-surface-container-highest);}
   .popup-del-btn{flex:none;padding:8px 10px;background:transparent;border:none;border-radius:var(--md-shape-md);font-size:14px;line-height:1;cursor:pointer;color:var(--dist-band-4);transition:all .2s;}
   .popup-del-btn:hover{background:var(--dist-band-4);color:#fff;}
+  .popup-notes{margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--ink-soft);line-height:1.4;white-space:pre-wrap;word-break:break-word;max-width:220px;max-height:90px;overflow-y:auto;}
+  .popup-edit-form{display:flex;flex-direction:column;gap:8px;min-width:210px;}
+  .popup-edit-form label{display:flex;flex-direction:column;gap:3px;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);}
+  .popup-edit-form input,.popup-edit-form textarea{width:100%;padding:6px 8px;background:var(--md-surface-container-lowest);border:1px solid var(--border);border-radius:var(--md-shape-sm);font-family:var(--sans);font-size:12px;color:var(--ink);outline:none;}
+  .popup-edit-form input:focus,.popup-edit-form textarea:focus{border-color:var(--accent);}
+  .popup-edit-form textarea{resize:vertical;min-height:54px;}
+  .popup-save-btn{flex:1;padding:8px;background:var(--md-primary);color:var(--md-on-primary);border:none;border-radius:var(--md-shape-md);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);}
+  .popup-cancel-btn{flex:none;padding:8px 12px;background:var(--md-surface-container-high);color:var(--ink);border:none;border-radius:var(--md-shape-md);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);}
   .popup-actions.tight{margin-top:6px;}
   .popup-snap-btn{width:100%;padding:8px;background:transparent;border:1px solid var(--md-outline-variant);border-radius:var(--md-shape-md);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);color:var(--ink-soft);transition:all .2s;}
   .popup-snap-btn:hover{border-color:var(--md-primary);color:var(--md-primary);}
@@ -331,6 +353,14 @@
      above just becomes dead space above the attribution bar. Drop back to
      the desktop offset; safe-area-inset-bottom still keeps the iOS home
      indicator from overlapping. */
+  @media (max-width: 899px), (pointer: coarse) {
+    .btn-icon,
+    .sidebar-close,
+    .modal-close,
+    #elev-close,
+    .chip-close{min-width:44px;min-height:44px;}
+    .popup-actions button{min-height:44px;}
+  }
   @media (max-width: 899px) and (display-mode: standalone) {
     #stats-chip,
     #locate-btn{bottom:calc(12px + env(safe-area-inset-bottom));}
@@ -345,7 +375,7 @@
     <span class="subtitle">your hiking journal</span>
   </div>
   <div class="header-controls">
-    <span class="sync-status" id="sync-status" onclick="openSettings()" title="Sync settings">
+    <span class="sync-status" id="sync-status" role="button" tabindex="0" onclick="openSettings()" onkeydown="handleActionKey(event, openSettings)" title="Sync settings">
       <span class="sync-dot"></span>
       <span id="sync-label">local</span>
     </span>
@@ -382,15 +412,15 @@
           <line x1="20" y1="12" x2="23" y2="12"/>
         </svg>
       </button>
-      <div id="stats-chip" role="button" tabindex="0" aria-label="Toggle stats detail">
-        <div class="chip-collapsed">
+      <div id="stats-chip">
+        <div class="chip-collapsed" role="button" tabindex="0" aria-label="Expand stats detail" onkeydown="handleActionKey(event, expandStatsChip)">
           <div class="chip-line" id="chip-total-line">—</div>
           <div class="chip-line chip-bart" id="chip-bart-line" style="display:none">—</div>
         </div>
         <div class="chip-expanded">
           <div class="chip-expanded-header">
             <span class="chip-expanded-title">Stats</span>
-            <button class="chip-close" type="button" aria-label="Collapse">×</button>
+            <button class="chip-close" type="button" aria-label="Collapse stats">×</button>
           </div>
           <div class="chip-row"><span class="chip-row-label">Total distance</span><span class="chip-row-val" id="chip-dist">—</span></div>
           <div class="chip-row"><span class="chip-row-label">Elevation gain</span><span class="chip-row-val" id="chip-elev">—</span></div>
@@ -406,7 +436,7 @@
       <div id="elev-inner">
         <div id="elev-title">
           <span id="elev-label">Elevation Profile</span>
-          <button id="elev-close" onclick="closeElev()">✕</button>
+          <button id="elev-close" onclick="closeElev()" aria-label="Close elevation profile">✕</button>
         </div>
         <div id="elev-chart-wrap"><canvas id="elev-canvas"></canvas></div>
       </div>
@@ -421,6 +451,17 @@
         <button class="sidebar-close" onclick="closeHikeList()" aria-label="Close">×</button>
       </div>
     </div>
+    <div class="sidebar-controls" id="sidebar-controls">
+      <input type="search" id="hike-search" placeholder="Search hikes…" aria-label="Search hikes" oninput="onSidebarFilterChange()"/>
+      <div class="sidebar-filter-row">
+        <select id="hike-sort" aria-label="Sort hikes" onchange="onSidebarFilterChange()">
+          <option value="date">Date (newest)</option>
+          <option value="distance">Distance</option>
+          <option value="elevation">Elevation</option>
+        </select>
+        <button type="button" id="filter-ridge" aria-pressed="false" onclick="toggleRidgeFilter()">On Ridge</button>
+      </div>
+    </div>
     <div id="hike-list"><div class="empty-sidebar">Load GPX files to see your hikes here</div></div>
     <button class="add-more-btn" id="add-more-btn" style="display:none" onclick="document.getElementById('file-input').click()">+ Add more GPX files</button>
   </div>
@@ -432,10 +473,10 @@
 </div>
 
 <!-- ══ SETTINGS MODAL ══ -->
-<div class="modal-overlay" id="modal-settings" onclick="if(event.target===this)closeSettings()">
+<div class="modal-overlay" id="modal-settings" role="dialog" aria-modal="true" aria-labelledby="settings-title" onclick="if(event.target===this)closeSettings()">
   <div class="modal-sheet">
     <div class="modal-header">
-      <div class="modal-title">Settings</div>
+      <div class="modal-title" id="settings-title">Settings</div>
       <button class="modal-close" onclick="closeSettings()" aria-label="Close">×</button>
     </div>
     <div class="modal-body">
@@ -490,15 +531,15 @@
           </div>
           <form onsubmit="event.preventDefault(); saveGitHubSettings();">
             <div class="field-group">
-              <div class="field-label">GitHub Username</div>
+              <label class="field-label" for="gh-username">GitHub Username</label>
               <input class="text-input" id="gh-username" type="text" placeholder="your-username" autocorrect="off" autocapitalize="off" spellcheck="false" autocomplete="username" name="username"/>
             </div>
             <div class="field-group">
-              <div class="field-label">Repository Name</div>
+              <label class="field-label" for="gh-repo">Repository Name</label>
               <input class="text-input" id="gh-repo" type="text" placeholder="personal-data" autocorrect="off" autocapitalize="off" spellcheck="false" autocomplete="off" name="gh-repo-input"/>
             </div>
             <div class="field-group">
-              <div class="field-label">Personal Access Token</div>
+              <label class="field-label" for="gh-token">Personal Access Token</label>
               <input class="text-input" id="gh-token" type="password" placeholder="ghp_…" autocomplete="current-password" autocorrect="off" autocapitalize="off" spellcheck="false" name="password"/>
             </div>
             <button type="submit" class="btn-primary">Save &amp; Test Connection</button>
@@ -621,6 +662,7 @@ import {
   buildSnappedView,
   buildRidgeCoverageSamples,
   recomputeCoverageKm,
+  deterministicHikeColor,
   lonToX,
   latToY,
   tileWidthM,
@@ -651,7 +693,7 @@ const APP_NAME = 'cairn';
 // Bumped on every UI change that also bumps sw.js CACHE. Rendered on the
 // settings page alongside the active SW's CACHE (when they diverge),
 // which is the tell for "the SW is serving stale HTML on this device".
-const APP_VERSION = 'cairn-v41';
+const APP_VERSION = 'cairn-v42';
 const OPS_KEY = 'cairn_ops';
 const DEVICE_ID_KEY = 'cairn_device_id';
 const SETTINGS_KEY = 'cairn_gh_settings';
@@ -708,6 +750,7 @@ let ridgeCoverageSamples = null; // precomputed typed-array samples for coverage
 let ridgeTotalKm = null;
 let ridgeLayer = null;
 let ridgeVisible = false;
+let ridgeFilterOn = false;
 let ridgeCoverageKm = null;
 let ridgeEdgeIndex = null;             // spatial index over ridge sub-segments
 let ridgeArcs = null;                  // per-segment cumulative arc length
@@ -734,7 +777,20 @@ function setUnits(u) {
   try { localStorage.setItem(UNITS_KEY, u); } catch {}
   $('btn-imperial').classList.toggle('active', u==='imperial');
   $('btn-metric').classList.toggle('active',   u==='metric');
+  $('btn-imperial').setAttribute('aria-pressed', u==='imperial' ? 'true' : 'false');
+  $('btn-metric').setAttribute('aria-pressed',   u==='metric'   ? 'true' : 'false');
   updateStats(); updateSidebar(); updateCoverageUI();
+  if (hikePopup && map.hasLayer(hikePopup) && selectedHikeId) {
+    const idx = resolveHikeIdx(selectedHikeId);
+    const h = hikes[idx];
+    if (h) hikePopup.setContent(popupHTML(h, idx));
+  }
+  if (ridgeLayer && ridgeTotalKm !== null) {
+    const html = ridgePopupHTML();
+    ridgeLayer.eachLayer(l => {
+      if (typeof l.getPopup === 'function' && l.getPopup()) l.setPopupContent(html);
+    });
+  }
   if (elevChart && (elevChart._hikeId !== undefined || elevChart._hikeIdx !== undefined)) {
     showElev(elevChart._hikeId ?? elevChart._hikeIdx);
   }
@@ -862,8 +918,18 @@ const map = L.map('map', { zoomControl: false }).setView([37.7, -122.2], 9);
 const baseTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
   attribution: 'Tiles &copy; <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a> &mdash; Esri, USGS, GIS Community',
   maxZoom: 19,
+  maxNativeZoom: navigator.onLine ? 19 : 15,
   crossOrigin: true
 }).addTo(map);
+function syncTileMaxNativeZoom() {
+  const maxNative = navigator.onLine ? 19 : 15;
+  if (baseTileLayer.options.maxNativeZoom !== maxNative) {
+    baseTileLayer.options.maxNativeZoom = maxNative;
+    baseTileLayer.redraw();
+  }
+}
+window.addEventListener('online', syncTileMaxNativeZoom);
+window.addEventListener('offline', syncTileMaxNativeZoom);
 map.createPane('ridgePane');
 map.getPane('ridgePane').style.zIndex = 350; // below hike layers
 
@@ -916,8 +982,18 @@ function ensureRidgeData() {
   return true;
 }
 
+function ridgePopupHTML() {
+  return `<div style="font-family:'Playfair Display',serif;font-size:13px;color:#2c2416">Bay Area Ridge Trail</div>
+     <div style="font-size:11px;color:#6b5e4a;margin-top:3px">${dispDist(ridgeTotalKm)} total · ${ridgeSegments.length} segments</div>`;
+}
+
 function buildRidgeLayer() {
   if (!ensureRidgeData()) return;
+  if (ridgeLayer) {
+    map.removeLayer(ridgeLayer);
+    ridgeLayer = null;
+  }
+  const ridgePopup = ridgePopupHTML();
   // Barbershop pattern: white casing underneath + black dashed on top.
   // Consolidate all segments into two Leaflet Multi-Polylines instead of 276 separate layers.
   const multiCoords = ridgeSegments.map(seg => seg.map(c => [c.lat, c.lon]));
@@ -929,8 +1005,6 @@ function buildRidgeLayer() {
   });
   ridgeLayer = L.layerGroup([baseLine, topLine]);
   ridgeLayer.addTo(map);
-  const ridgePopup = `<div style="font-family:'Playfair Display',serif;font-size:13px;color:#2c2416">Bay Area Ridge Trail</div>
-     <div style="font-size:11px;color:#6b5e4a;margin-top:3px">${dispDist(ridgeTotalKm)} total · ${ridgeSegments.length} segments</div>`;
   topLine.bindPopup(ridgePopup);
 }
 
@@ -1098,7 +1172,7 @@ function renderAll() {
     for (const id of snappedCache.keys()) if (!live.has(id)) snappedCache.delete(id);
   }
   hikes.forEach((h,i)=>{
-    h.color=COLORS[i%COLORS.length];
+    h.color = deterministicHikeColor(h.id, COLORS);
     // Snapped hikes render their corrected geometry whether or not the overlay
     // is showing; the ridge-overlap *shading* is what the overlay gates.
     const snapped = h.snapped && ensureRidgeData() ? snappedView(h) : null;
@@ -1137,18 +1211,18 @@ function renderAll() {
       h.lines.push({ layer: poly, onRidge: true });
     }
     h.startMarker = L.circleMarker(ll[0],{
-      radius: isSel ? START_MARKER_RADIUS_SELECTED : START_MARKER_RADIUS,
-      fillColor: '#4caf50',
-      color: '#fff',
-      weight: isSel ? 2.5 : 1.5,
-      fillOpacity: 1,
+      radius: isSel ? START_MARKER_RADIUS_SELECTED : 5,
+      fillColor: '#ffffff',
+      color: '#2e7d32',
+      weight: 2.5,
+      fillOpacity: 0.9,
       interactive: false
     }).addTo(map);
     h.endMarker = L.circleMarker(ll[ll.length-1],{
-      radius: isSel ? START_MARKER_RADIUS_SELECTED : START_MARKER_RADIUS,
-      fillColor: '#e53935',
-      color: '#fff',
-      weight: isSel ? 2.5 : 1.5,
+      radius: isSel ? 5.5 : 3.5,
+      fillColor: '#c62828',
+      color: '#ffffff',
+      weight: isSel ? 2 : 1.5,
       fillOpacity: 1,
       interactive: false
     }).addTo(map);
@@ -1182,14 +1256,17 @@ function renderAll() {
 
 function popupHTML(h,i){
   const eid = esc(h.id);
+  const notesHtml = h.notes ? `<div class="popup-notes">${esc(h.notes)}</div>` : '';
   return `<div class="popup-name">${esc(h.name)}</div>
   <div class="popup-stats">
     <div class="popup-row"><span class="popup-key">Date</span><span class="popup-val">${esc(h.date || '—')}</span></div>
     <div class="popup-row"><span class="popup-key">Distance</span><span class="popup-val">${dispDist(h.distKm)}</span></div>
     <div class="popup-row"><span class="popup-key">Elev gain</span><span class="popup-val">${dispElev(h.elevGain)}</span></div>
   </div>
+  ${notesHtml}
   <div class="popup-actions">
-    <button class="popup-elev-btn" onclick="showElev('${eid}')">↗ Elevation profile</button>
+    <button class="popup-elev-btn" onclick="showElev('${eid}')">↗ Elevation</button>
+    <button class="popup-edit-btn" onclick="editHike('${eid}')" title="Edit hike" aria-label="Edit hike">✎ Edit</button>
     <button class="popup-del-btn" onclick="deleteHike('${eid}')" title="Delete hike" aria-label="Delete hike">🗑</button>
   </div>
   <div class="popup-actions tight">
@@ -1197,6 +1274,62 @@ function popupHTML(h,i){
       aria-pressed="${h.snapped ? 'true' : 'false'}">${h.snapped ? '✓ Snapped to trail' : '⇥ Snap to trail'}</button>
   </div>
   <div class="popup-snap-note">${snapNote(h)}</div>`;
+}
+
+function editHike(idOrIdx) {
+  const i = resolveHikeIdx(idOrIdx);
+  const h = hikes[i];
+  if (!h || !hikePopup || !map.hasLayer(hikePopup)) return;
+  const eid = esc(h.id);
+  const formHtml = `<form class="popup-edit-form" onsubmit="event.preventDefault(); saveHikeEdit('${eid}')">
+    <label>Name
+      <input type="text" id="popup-edit-name" value="${esc(h.name)}" maxlength="200" aria-label="Hike name"/>
+    </label>
+    <label>Date
+      <input type="text" id="popup-edit-date" value="${esc(h.date || '')}" maxlength="64" placeholder="e.g. Apr 3, 2024" aria-label="Hike date"/>
+    </label>
+    <label>Notes
+      <textarea id="popup-edit-notes" rows="3" maxlength="4000" placeholder="Trail conditions, highlights…" aria-label="Notes">${esc(h.notes || '')}</textarea>
+    </label>
+    <div class="popup-actions">
+      <button type="submit" class="popup-save-btn">Save</button>
+      <button type="button" class="popup-cancel-btn" onclick="cancelHikeEdit('${eid}')">Cancel</button>
+    </div>
+  </form>`;
+  hikePopup.setContent(formHtml);
+  if (hikePopup._container) {
+    const quad = getClearestQuadrant(hikePopup.getLatLng(), hikePoints(h));
+    hikePopup.options.offset = computeDynamicOffset(quad, hikePopup._container);
+    hikePopup.update();
+  }
+  $('popup-edit-name')?.focus();
+}
+
+function cancelHikeEdit(idOrIdx) {
+  const i = resolveHikeIdx(idOrIdx);
+  const h = hikes[i];
+  if (h && hikePopup && map.hasLayer(hikePopup)) {
+    showHikePopup(h.id, hikePopup.getLatLng());
+  }
+}
+
+function saveHikeEdit(idOrIdx) {
+  const i = resolveHikeIdx(idOrIdx);
+  const h = hikes[i];
+  if (!h) return;
+  const rawName = $('popup-edit-name')?.value ?? '';
+  const rawDate = $('popup-edit-date')?.value ?? '';
+  const rawNotes = $('popup-edit-notes')?.value ?? '';
+  const name = rawName.trim().slice(0, 200) || h.name;
+  const date = rawDate.trim().slice(0, 64);
+  const notes = rawNotes.trim().slice(0, 4000);
+  const parsedMs = date ? Date.parse(date) : 0;
+  const dateMs = Number.isFinite(parsedMs) ? parsedMs : 0;
+  const anchor = hikePopup && map.hasLayer(hikePopup) ? hikePopup.getLatLng() : null;
+  applyOp('update-hike', h.id, { meta: { name, date, dateMs, notes } });
+  if (anchor) {
+    showHikePopup(h.id, anchor);
+  }
 }
 
 // What the snap did, in one line under the button. Bridged metres are called
@@ -1227,9 +1360,17 @@ async function toggleSnap(idOrIdx) {
   }
   // Stored in meta, so it rides the existing update-hike path and syncs to
   // other devices like any other editable field. applyOp re-materializes and
-  // re-renders; close the popup first because the hike's index can move.
-  map.closePopup();
+  // re-renders; refresh the open popup in place.
   applyOp('update-hike', h.id, { meta: { snapped: !h.snapped } });
+  if (hikePopup && map.hasLayer(hikePopup)) {
+    const updatedIdx = resolveHikeIdx(h.id);
+    const updatedHike = hikes[updatedIdx];
+    if (updatedHike) {
+      hikePopup.setContent(popupHTML(updatedHike, updatedIdx));
+    } else {
+      map.closePopup(hikePopup);
+    }
+  }
 }
 
 let selectedHikeId = null;
@@ -1249,7 +1390,11 @@ function selectHike(i) {
   const selIdx = selectedHikeIndex();
   document.querySelector('.hike-item.active')?.classList.remove('active');
   if (selIdx !== null) {
-    document.querySelector(`.hike-item[data-i="${selIdx}"]`)?.classList.add('active');
+    const activeEl = document.querySelector(`.hike-item[data-i="${selIdx}"]`);
+    if (activeEl) {
+      activeEl.classList.add('active');
+      activeEl.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    }
   }
   const ridgeActive = ridgeVisible && ensureRidgeData();
   hikes.forEach((h) => {
@@ -1265,29 +1410,95 @@ function selectHike(i) {
       }
     }
     const markerRadius = isSelected ? START_MARKER_RADIUS_SELECTED : START_MARKER_RADIUS;
-    const markerWeight = isSelected ? 2.5 : 1.5;
-    for (const m of [h.startMarker, h.endMarker]) {
-      if (m) {
-        m.setStyle({ radius: markerRadius, weight: markerWeight });
-        if (isSelected) m.bringToFront();
-      }
+    if (h.startMarker) {
+      h.startMarker.setStyle({ radius: markerRadius, weight: 2.5 });
+      if (isSelected) h.startMarker.bringToFront();
+    }
+    if (h.endMarker && h.endMarker !== h.startMarker) {
+      h.endMarker.setStyle({ radius: isSelected ? 5.5 : 3.5, weight: isSelected ? 2 : 1.5 });
+      if (isSelected) h.endMarker.bringToFront();
     }
     if (isSelected && h.layer) {
       h.layer.bringToFront();
     }
   });
 }
+function handleActionKey(e, fn) {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    fn();
+  }
+}
+function handleHikeItemKey(e, id) {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    focusHike(id);
+  }
+}
+function expandStatsChip() {
+  $('stats-chip')?.classList.add('expanded');
+}
+function onSidebarFilterChange() { updateSidebar(); }
+async function toggleRidgeFilter() {
+  ridgeFilterOn = !ridgeFilterOn;
+  const btn = $('filter-ridge');
+  if (btn) {
+    btn.setAttribute('aria-pressed', ridgeFilterOn ? 'true' : 'false');
+    btn.classList.toggle('active', ridgeFilterOn);
+  }
+  if (ridgeFilterOn && !ensureRidgeData()) {
+    await loadRidgeStatic();
+  }
+  updateSidebar();
+}
 function updateSidebar(){
   const list=$('hike-list');
-  if(!hikes.length){list.innerHTML='<div class="empty-sidebar">No hikes loaded yet</div>';return;}
-  list.innerHTML=hikes.map((h,i)=>`
-    <div class="hike-item${h.id === selectedHikeId ? ' active' : ''}" data-i="${i}" onclick="focusHike('${esc(h.id)}')">
-      <div class="hike-name" title="${esc(h.name)}">${esc(h.name)}</div>
-      <div class="hike-meta"><span class="hike-dist ${distBandClass(h.distKm)}">${dispDist(h.distKm)}</span></div>
-      <div class="hike-date">${esc(h.date || 'No date')}</div>
-    </div>`).join('');
-  $('hike-count').textContent=hikes.length;
+  if(!hikes.length){
+    list.innerHTML='<div class="empty-sidebar">No hikes loaded yet</div>';
+    $('hike-count').textContent='0';
+    return;
+  }
+  const q = ($('hike-search')?.value || '').trim().toLowerCase();
+  const sortMode = $('hike-sort')?.value || 'date';
+  const ridgeReady = ensureRidgeData();
+  let displayed = hikes.filter(h => {
+    if (q) {
+      const matchName = (h.name || '').toLowerCase().includes(q);
+      const matchNotes = (h.notes || '').toLowerCase().includes(q);
+      if (!matchName && !matchNotes) return false;
+    }
+    if (ridgeFilterOn) {
+      if (ridgeReady) {
+        if (!h.snapped && !classifyHikeAgainstRidge(h).runs.some(r => r.onRidge)) return false;
+      } else if (!h.snapped) {
+        return false;
+      }
+    }
+    return true;
+  });
+  displayed = displayed.slice().sort((a, b) => {
+    if (sortMode === 'distance') return (b.distKm || 0) - (a.distKm || 0);
+    if (sortMode === 'elevation') return (b.elevGain || 0) - (a.elevGain || 0);
+    return (b.dateMs || 0) - (a.dateMs || 0);
+  });
+  $('hike-count').textContent = displayed.length === hikes.length
+    ? String(hikes.length)
+    : `${displayed.length}/${hikes.length}`;
   $('add-more-btn').style.display='block';
+  if (!displayed.length) {
+    list.innerHTML='<div class="empty-sidebar">No hikes match the current filter</div>';
+    return;
+  }
+  list.innerHTML=displayed.map(h=>{
+    const idx = hikes.indexOf(h);
+    const eid = esc(h.id);
+    return `
+    <div class="hike-item${h.id === selectedHikeId ? ' active' : ''}" data-i="${idx}" data-id="${eid}" role="button" tabindex="0" onclick="focusHike('${eid}')" onkeydown="handleHikeItemKey(event, '${eid}')">
+      <div class="hike-name" title="${esc(h.name)}">${esc(h.name)}</div>
+      <div class="hike-meta"><span class="hike-dist ${distBandClass(h.distKm)}">${dispDist(h.distKm)}</span><span class="hike-elev">${dispElev(h.elevGain)}</span></div>
+      <div class="hike-date">${esc(h.date || 'No date')}</div>
+    </div>`;
+  }).join('');
 }
 function updateStats(){ renderChip(); }
 function focusHike(idOrIdx){
@@ -1340,37 +1551,53 @@ function showElev(idOrIdx){
   if(labels.length) labels[labels.length-1]=rawDist(h.distKm).toFixed(2);
   $('elev-label').textContent='Elevation · '+h.name;
   $('elev-panel').classList.add('open');
-  if(elevChart) elevChart.destroy();
-  const ctx=$('elev-canvas').getContext('2d');
-  elevChart=new Chart(ctx,{type:'line',data:{labels,datasets:[{data:elevs,borderColor:h.color||'#8b4513',borderWidth:1.5,fill:true,
-    backgroundColor:c=>{const g=c.chart.ctx.createLinearGradient(0,0,0,c.chart.height);g.addColorStop(0,(h.color||'#8b4513')+'55');g.addColorStop(1,(h.color||'#8b4513')+'05');return g;},
-    pointRadius:0,tension:.3}]},
-    options:{responsive:true,maintainAspectRatio:false,animation:false,
-      interaction:{mode:'index',intersect:false},
-      onHover:(e,els,chart)=>{
-        if(els.length) showElevHoverPoint(chart._sampled?.[els[0].index]);
-        else hideElevHoverPoint();
-      },
-      plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,
-        callbacks:{title:items=>`${items[0].label} ${distUnit()}`,label:item=>`${item.raw} ${elevUnit()}`},
-        backgroundColor:'#fcf0ea',titleColor:'#211a14',bodyColor:'#52443a',borderColor:'#d7c3b7',borderWidth:1,
-        titleFont:{family:'DM Mono',size:11},bodyFont:{family:'DM Mono',size:11}}},
-        scales:{
-        x:{ticks:{autoSkip:false,font:{family:'DM Mono',size:10},color:'#52443a',callback:function(v){return this.getLabelForValue(v)+distUnit();}},
-          // Force evenly-spaced ticks that always include index 0 and the last
-          // point, so the total distance is labeled at the right edge. autoSkip
-          // is off above so Chart.js can't cull the endpoint tick.
-          afterBuildTicks:axis=>{const last=labels.length-1;if(last<1){axis.ticks=last===0?[{value:0}]:axis.ticks;return;}const want=Math.min(5,last+1),seen=new Set();axis.ticks=[];for(let k=0;k<want;k++){const value=Math.round(k*last/(want-1));if(!seen.has(value)){seen.add(value);axis.ticks.push({value});}}},
-          grid:{color:'#d7c3b722'},border:{color:'#d7c3b7'}},
-        y:{ticks:{maxTicksLimit:4,font:{family:'DM Mono',size:10},color:'#52443a',callback:v=>`${v}${elevUnit()}`},grid:{color:'#d7c3b722'},border:{color:'#d7c3b7'}}
-        }}});
+  const strokeColor = h.color || '#8b4513';
+  const fillGradient = c => {
+    const g = c.chart.ctx.createLinearGradient(0, 0, 0, c.chart.height);
+    g.addColorStop(0, strokeColor + '55');
+    g.addColorStop(1, strokeColor + '05');
+    return g;
+  };
+  if (elevChart) {
+    elevChart.data.labels = labels;
+    elevChart.data.datasets[0].data = elevs;
+    elevChart.data.datasets[0].borderColor = strokeColor;
+    elevChart.data.datasets[0].backgroundColor = fillGradient;
+    elevChart.update('none');
+  } else {
+    const ctx=$('elev-canvas').getContext('2d');
+    elevChart=new Chart(ctx,{type:'line',data:{labels,datasets:[{data:elevs,borderColor:strokeColor,borderWidth:1.5,fill:true,
+      backgroundColor:fillGradient,
+      pointRadius:0,tension:.3}]},
+      options:{responsive:true,maintainAspectRatio:false,animation:false,
+        interaction:{mode:'index',intersect:false},
+        onHover:(e,els,chart)=>{
+          if(els.length) showElevHoverPoint(chart._sampled?.[els[0].index]);
+          else hideElevHoverPoint();
+        },
+        plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,
+          callbacks:{title:items=>`${items[0].label} ${distUnit()}`,label:item=>`${item.raw} ${elevUnit()}`},
+          backgroundColor:'#fcf0ea',titleColor:'#211a14',bodyColor:'#52443a',borderColor:'#d7c3b7',borderWidth:1,
+          titleFont:{family:'DM Mono',size:11},bodyFont:{family:'DM Mono',size:11}}},
+          scales:{
+          x:{ticks:{autoSkip:false,font:{family:'DM Mono',size:10},color:'#52443a',callback:function(v){return this.getLabelForValue(v)+distUnit();}},
+            // Force evenly-spaced ticks that always include index 0 and the last
+            // point, so the total distance is labeled at the right edge. autoSkip
+            // is off above so Chart.js can't cull the endpoint tick.
+            afterBuildTicks:axis=>{const last=(axis.chart?.data?.labels?.length||0)-1;if(last<1){axis.ticks=last===0?[{value:0}]:axis.ticks;return;}const want=Math.min(5,last+1),seen=new Set();axis.ticks=[];for(let k=0;k<want;k++){const value=Math.round(k*last/(want-1));if(!seen.has(value)){seen.add(value);axis.ticks.push({value});}}},
+            grid:{color:'#d7c3b722'},border:{color:'#d7c3b7'}},
+          y:{ticks:{maxTicksLimit:4,font:{family:'DM Mono',size:10},color:'#52443a',callback:v=>`${v}${elevUnit()}`},grid:{color:'#d7c3b722'},border:{color:'#d7c3b7'}}
+          }}});
+  }
   elevChart._hikeId=h.id;
   elevChart._hikeIdx=i;
   elevChart._sampled=sampled;
   // Clear the map marker when the cursor leaves the chart area (onHover only
-  // fires while over the canvas). Assigned (not addEventListener) so repeated
-  // showElev calls don't stack listeners.
-  $('elev-canvas').onmouseleave=hideElevHoverPoint;
+  // fires while over the canvas) or when a mobile touch lifts.
+  const elevCanvas = $('elev-canvas');
+  elevCanvas.onmouseleave = hideElevHoverPoint;
+  elevCanvas.ontouchend = hideElevHoverPoint;
+  elevCanvas.onpointerup = hideElevHoverPoint;
 }
 // Single reusable marker highlighting the elevation-hover point on the map.
 // White halo + dark centre so it stays legible over any palette-colored track.
@@ -1512,6 +1739,7 @@ function showCoordPopup(latlng) {
 
   const html = `<div class="coord-pill">` +
     `<span class="coord-pill-text">${coordText}</span>` +
+    `<button type="button" class="coord-pill-copy" onclick="copyCoord('${coordText}', this)" title="Copy coordinates" aria-label="Copy coordinates">Copy</button>` +
     `<a href="${gmapsUrl}" target="_blank" rel="noopener" class="coord-pill-link" title="Open in Google Maps">` +
       `<span>Google Maps</span>` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>` +
@@ -1535,6 +1763,15 @@ function showCoordPopup(latlng) {
     }
     coordPopup = null;
   });
+}
+
+function copyCoord(text, btn) {
+  navigator.clipboard?.writeText(text).then(() => {
+    if (btn) {
+      btn.textContent = 'Copied';
+      setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+    }
+  }).catch(() => {});
 }
 
 // ── offline-tile prefetch ─────────────────────────────────────────
@@ -1853,17 +2090,28 @@ function deleteHike(idOrIdx){
   });
 }
 
-// Bottom snackbar with a single Undo action. Reassigns the button handler each
-// call (no listener stacking) and restarts the 30 s auto-dismiss timer.
+// Bottom snackbar with optional Undo action. Reassigns the button handler each
+// call (no listener stacking) and restarts the auto-dismiss timer.
 let toastTimer = null;
-function showUndoToast(message, onUndo){
+function showToast(message, { undoLabel = 'Undo', onUndo = null, durationMs = 5000 } = {}) {
   const toast = $('toast');
+  const undoBtn = $('toast-undo');
   const dismiss = () => { toast.classList.remove('show'); clearTimeout(toastTimer); toastTimer = null; };
   $('toast-label').textContent = message;
-  $('toast-undo').onclick = () => { dismiss(); onUndo(); };
+  if (typeof onUndo === 'function') {
+    undoBtn.textContent = undoLabel;
+    undoBtn.style.display = '';
+    undoBtn.onclick = () => { dismiss(); onUndo(); };
+  } else {
+    undoBtn.style.display = 'none';
+    undoBtn.onclick = null;
+  }
   toast.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(dismiss, 30000);
+  toastTimer = setTimeout(dismiss, durationMs);
+}
+function showUndoToast(message, onUndo){
+  showToast(message, { undoLabel: 'Undo', onUndo, durationMs: 30000 });
 }
 
 // ── file loading ──────────────────────────────────────────────────
@@ -1871,26 +2119,37 @@ async function loadFiles(files){
   const results = await Promise.all(Array.from(files).map(f => new Promise(res => {
     const r = new FileReader();
     r.onload = e => res({ text: e.target.result, name: f.name });
+    r.onerror = () => res({ text: '', name: f.name });
     r.readAsText(f);
   })));
 
   const toAdd = [];
   const seenIds = new Set();   // within this import batch
-  let skipped = 0;
+  let dupCount = 0;
+  let errorCount = 0;
+  let totalTrimmedKm = 0;
   for (const { text, name } of results) {
     const h = parseGPX(text, name);
-    if (!h) continue;
+    if (!h) { errorCount++; continue; }
     if (h.trimmedKm) {
       console.log(`cairn: auto-trimmed ${h.trimmedKm} km trailing driving segment from ${h.name}`);
     }
     const id = await computeHikeId(h.coords);
-    if (hasHike(id) || seenIds.has(id)) { skipped++; continue; }
+    if (hasHike(id) || seenIds.has(id)) { dupCount++; continue; }
     seenIds.add(id);
+    totalTrimmedKm += (h.trimmedKm || 0);
     toAdd.push({ id, hike: h });
   }
 
-  if (!toAdd.length) {
-    if (skipped) console.log(`cairn: skipped ${skipped} already-present hike(s)`);
+  const addedCount = toAdd.length;
+  if (!addedCount) {
+    if (dupCount && !errorCount) {
+      showToast(dupCount === 1 ? 'File already imported' : `All ${dupCount} files already imported`);
+    } else if (errorCount) {
+      let msg = `Could not parse ${errorCount} file${errorCount === 1 ? '' : 's'} (no trackpoints found)`;
+      if (dupCount) msg += `, ${dupCount} duplicate${dupCount === 1 ? '' : 's'} skipped`;
+      showToast(msg);
+    }
     return;
   }
 
@@ -1924,6 +2183,14 @@ async function loadFiles(files){
   // New hikes → new tiles to prefetch; re-schedule so the Offline Tiles
   // section picks up the larger target set without waiting for next boot.
   tilePrefetchSchedule();
+
+  const details = [];
+  if (dupCount) details.push(`${dupCount} duplicate${dupCount === 1 ? '' : 's'} skipped`);
+  if (errorCount) details.push(`${errorCount} failed`);
+  if (totalTrimmedKm >= 0.05) details.push(`${dispDist(totalTrimmedKm)} drive trimmed`);
+  let summary = `Imported ${addedCount} hike${addedCount === 1 ? '' : 's'}`;
+  if (details.length) summary += ` (${details.join(', ')})`;
+  showToast(summary);
 }
 
 // ── events ────────────────────────────────────────────────────────
@@ -1931,9 +2198,24 @@ $('file-input').addEventListener('change',e=>{if(e.target.files.length)loadFiles
 const dz=$('drop-zone');
 dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
 dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
-dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');loadFiles(e.dataTransfer.files);});
-$('map').addEventListener('dragover',e=>e.preventDefault());
-$('map').addEventListener('drop',e=>{e.preventDefault();loadFiles(e.dataTransfer.files);});
+window.addEventListener('dragover',e=>{if(e.dataTransfer?.types?.includes('Files'))e.preventDefault();});
+window.addEventListener('drop',e=>{
+  if(e.dataTransfer?.types?.includes('Files')){
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    if(e.dataTransfer.files?.length) loadFiles(e.dataTransfer.files);
+  }
+});
+$('elev-panel').addEventListener('transitionend',e=>{
+  if(e.propertyName==='height') map.invalidateSize({pan:false});
+});
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape') return;
+  if($('modal-settings').classList.contains('open')){closeSettings();return;}
+  if($('sidebar').classList.contains('open')){closeHikeList();return;}
+  if($('stats-chip').classList.contains('expanded')){$('stats-chip').classList.remove('expanded');return;}
+  if($('elev-panel').classList.contains('open')){closeElev();}
+});
 
 // Stats chip: tap collapsed pill to expand, ✕ (or map click) to collapse.
 (function wireChip(){
@@ -1985,9 +2267,9 @@ $('map').addEventListener('drop',e=>{e.preventDefault();loadFiles(e.dataTransfer
     showCoordPopup(e.latlng);
   });
 
-  // Pointerdown for click-and-hold (mouse left-click, touch, stylus)
+  // Pointerdown for click-and-hold (touch, stylus; desktop uses right-click contextmenu)
   mapEl.addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.pointerType === 'mouse') return;
     if (e.target.closest('#drop-zone:not(.hidden), #locate-btn, #stats-chip, .leaflet-control, .leaflet-popup, .modal-overlay')) {
       return;
     }
@@ -2165,6 +2447,15 @@ window.getClearestQuadrant = getClearestQuadrant;
 window.getQuadrantPopupOptions = getQuadrantPopupOptions;
 window.computeDynamicOffset = computeDynamicOffset;
 window.showHikePopup = showHikePopup;
+window.editHike = editHike;
+window.saveHikeEdit = saveHikeEdit;
+window.cancelHikeEdit = cancelHikeEdit;
+window.onSidebarFilterChange = onSidebarFilterChange;
+window.toggleRidgeFilter = toggleRidgeFilter;
+window.handleActionKey = handleActionKey;
+window.handleHikeItemKey = handleHikeItemKey;
+window.expandStatsChip = expandStatsChip;
+window.copyCoord = copyCoord;
 renderLocateLog();
 requestPersistentStorage();
 refreshTileStatus();
