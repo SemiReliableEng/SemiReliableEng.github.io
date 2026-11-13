@@ -3,6 +3,8 @@
 
 const APP_NAME_RE = /^[a-z][a-z0-9-]*$/;
 const DEVICE_ID_RE = /^[a-zA-Z0-9_-]+$/;
+const USERNAME_RE = /^[a-zA-Z0-9-]+$/;
+const REPO_RE = /^[a-zA-Z0-9._-]+$/;
 
 // ── Path safety ────────────────────────────────────────────────────────────
 
@@ -33,7 +35,7 @@ export function buildPath(appName, rel) {
 
 // ── Base64 (works in Node and browser) ─────────────────────────────────────
 
-function encodeBase64Utf8(str) {
+export function encodeBase64Utf8(str) {
   if (typeof Buffer !== 'undefined') {
     return Buffer.from(str, 'utf-8').toString('base64');
   }
@@ -46,7 +48,7 @@ function encodeBase64Utf8(str) {
   return btoa(bin);
 }
 
-function decodeBase64Utf8(b64) {
+export function decodeBase64Utf8(b64) {
   const cleaned = String(b64).replace(/\s/g, '');
   if (typeof Buffer !== 'undefined') {
     return Buffer.from(cleaned, 'base64').toString('utf-8');
@@ -114,6 +116,8 @@ class Sync {
     this._batchMessage = null;
     this._shaKey = `${this.appName}_device_ops_sha`;
     this._cachedFiles = new Map(); // filename -> { sha, ops }
+    this.lastPullOk = null;
+    this.lastPushOk = null;
   }
 
   // ── Events ──────────────────────────────────────────────────────────────
@@ -140,6 +144,20 @@ class Sync {
     return s;
   }
 
+  _assertValidSettingsRepo(settings) {
+    if (!settings || typeof settings.username !== 'string' || !USERNAME_RE.test(settings.username)) {
+      throw new Error(`invalid GitHub username: ${JSON.stringify(settings?.username)}`);
+    }
+    if (
+      typeof settings.repo !== 'string' ||
+      !REPO_RE.test(settings.repo) ||
+      settings.repo === '.' ||
+      settings.repo === '..'
+    ) {
+      throw new Error(`invalid GitHub repo: ${JSON.stringify(settings?.repo)}`);
+    }
+  }
+
   _contentsUrl(settings, relInApp) {
     const path = buildPath(this.appName, relInApp);
     const url = `https://api.github.com/repos/${settings.username}/${settings.repo}/contents/${path}`;
@@ -161,19 +179,71 @@ class Sync {
   }
 
   _assertSafeUrl(url, settings) {
-    const expectedPrefix =
-      `https://api.github.com/repos/${settings.username}/${settings.repo}/contents/apps/${this.appName}/`;
-    const dirExact =
-      `https://api.github.com/repos/${settings.username}/${settings.repo}/contents/apps/${this.appName}`;
-    if (url !== dirExact && !url.startsWith(expectedPrefix)) {
+    this._assertValidSettingsRepo(settings);
+    if (typeof url !== 'string') {
+      throw new Error(`URL outside app scope: ${url}`);
+    }
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`URL outside app scope: ${url}`);
+    }
+    const prefix = `/repos/${settings.username}/${settings.repo}/contents/`;
+    const rawExpectedPrefix = `https://api.github.com${prefix}`;
+    if (!url.startsWith(rawExpectedPrefix)) {
+      throw new Error(`URL outside app scope: ${url}`);
+    }
+    const expectedRelPath = url.slice(rawExpectedPrefix.length);
+    const appPrefix = `apps/${this.appName}/`;
+    if (
+      !expectedRelPath.startsWith(appPrefix) ||
+      expectedRelPath.length <= appPrefix.length ||
+      expectedRelPath.includes('..') ||
+      expectedRelPath.includes('//')
+    ) {
+      throw new Error(`URL outside app scope: ${url}`);
+    }
+    if (
+      parsed.origin !== 'https://api.github.com' ||
+      parsed.search !== '' ||
+      parsed.hash !== '' ||
+      parsed.username !== '' ||
+      parsed.password !== '' ||
+      parsed.pathname !== `/repos/${settings.username}/${settings.repo}/contents/${expectedRelPath}`
+    ) {
       throw new Error(`URL outside app scope: ${url}`);
     }
   }
 
   _assertSafeBlobUrl(url, settings) {
-    const expectedPrefix =
-      `https://api.github.com/repos/${settings.username}/${settings.repo}/git/blobs/`;
-    if (!url.startsWith(expectedPrefix)) {
+    this._assertValidSettingsRepo(settings);
+    if (typeof url !== 'string') {
+      throw new Error(`blob URL outside repo: ${url}`);
+    }
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`blob URL outside repo: ${url}`);
+    }
+    const prefix = `/repos/${settings.username}/${settings.repo}/git/blobs/`;
+    const rawExpectedPrefix = `https://api.github.com${prefix}`;
+    if (!url.startsWith(rawExpectedPrefix)) {
+      throw new Error(`blob URL outside repo: ${url}`);
+    }
+    const sha = url.slice(rawExpectedPrefix.length);
+    if (!/^[a-f0-9]{40}$/.test(sha)) {
+      throw new Error(`blob URL outside repo: ${url}`);
+    }
+    if (
+      parsed.origin !== 'https://api.github.com' ||
+      parsed.search !== '' ||
+      parsed.hash !== '' ||
+      parsed.username !== '' ||
+      parsed.password !== '' ||
+      parsed.pathname !== `${prefix}${sha}`
+    ) {
       throw new Error(`blob URL outside repo: ${url}`);
     }
   }
@@ -213,13 +283,17 @@ class Sync {
 
     const settings = this._settingsOrNull();
     if (!settings) {
+      this.lastPushOk = false;
       this._status('error', '✗ not configured');
       this._log('✗ GitHub settings not configured');
-      return;
+      return false;
     }
 
     const deviceOps = this.getDeviceOps() || [];
-    if (deviceOps.length === 0) return;
+    if (deviceOps.length === 0) {
+      this.lastPushOk = true;
+      return true;
+    }
 
     this._status('syncing', '⟳ syncing');
     const message = opts.message || this._defaultMessage();
@@ -230,12 +304,36 @@ class Sync {
       if (newSha) {
         this.storage.setItem(this._shaKey, newSha);
       }
+      this.lastPushOk = true;
       this._status('ok', '✓ synced');
       this._log('✓ Pushed ops to GitHub');
+      return true;
     } catch (e) {
+      this.lastPushOk = false;
       this._status('error', '✗ offline');
       this._log(`✗ Push error: ${e.message}`);
+      return false;
     }
+  }
+
+  async _refetchShaAndPut(url, settings, content, message) {
+    const getRes = await this.fetch(url, { method: 'GET', headers: this._headers(settings.token) });
+    let freshSha = null;
+    if (getRes.ok) {
+      const getData = await getRes.json();
+      freshSha = getData?.sha || null;
+      if (freshSha) this.storage.setItem(this._shaKey, freshSha);
+    }
+    const retryRes = await this._put(url, settings.token, {
+      message,
+      content,
+      ...(freshSha ? { sha: freshSha } : {}),
+    });
+    if (retryRes.ok) {
+      const data = await retryRes.json();
+      return data?.content?.sha;
+    }
+    throw new Error(`push retry failed: ${retryRes.status}`);
   }
 
   async _putWithRetry(settings, content, message) {
@@ -255,32 +353,25 @@ class Sync {
 
     if (res.status === 409) {
       this._log('⚠ SHA conflict on push, re-fetching…');
-      const getRes = await this.fetch(url, { method: 'GET', headers: this._headers(settings.token) });
-      let freshSha = null;
-      if (getRes.ok) {
-        const getData = await getRes.json();
-        freshSha = getData?.sha || null;
-        if (freshSha) this.storage.setItem(this._shaKey, freshSha);
-      }
-      const retryRes = await this._put(url, settings.token, {
-        message, content,
-        ...(freshSha ? { sha: freshSha } : {}),
-      });
-      if (retryRes.ok) {
-        const data = await retryRes.json();
-        return data?.content?.sha;
-      }
-      throw new Error(`push retry failed: ${retryRes.status}`);
+      return this._refetchShaAndPut(url, settings, content, message);
     }
 
     if (res.status === 422) {
-      this._log('⚠ 422 on push, retrying without sha…');
-      const retryRes = await this._put(url, settings.token, { message, content });
-      if (retryRes.ok) {
-        const data = await retryRes.json();
-        return data?.content?.sha;
+      if (storedSha) {
+        this._log('⚠ 422 on push, retrying without sha…');
+        const retryRes = await this._put(url, settings.token, { message, content });
+        if (retryRes.ok) {
+          const data = await retryRes.json();
+          return data?.content?.sha;
+        }
+        if (retryRes.status === 422 || retryRes.status === 409) {
+          this._log('⚠ File exists remotely, re-fetching sha…');
+          return this._refetchShaAndPut(url, settings, content, message);
+        }
+        throw new Error(`push fallback failed: ${retryRes.status}`);
       }
-      throw new Error(`push fallback failed: ${retryRes.status}`);
+      this._log('⚠ 422 on push without sha, re-fetching sha…');
+      return this._refetchShaAndPut(url, settings, content, message);
     }
 
     const errData = await res.json().catch(() => ({}));
@@ -300,8 +391,9 @@ class Sync {
   async pull() {
     const settings = this._settingsOrNull();
     if (!settings) {
+      this.lastPullOk = false;
       this._status('error', '✗ not configured');
-      return;
+      return false;
     }
 
     this._status('syncing', '⟳ pulling');
@@ -314,16 +406,24 @@ class Sync {
           // error — the next push will create it. Clear any stale device-ops
           // SHA so the push PUTs without a sha (create, not update).
           this.storage.removeItem(this._shaKey);
+          this.lastPullOk = true;
           this._status('ok', '✓ empty');
           this._log('↳ No remote ops yet — will seed on first push');
-          return { initialized: false };
+          return { initialized: false, ok: true };
         }
         throw new Error(`pull list failed: ${dirRes.status}`);
       }
 
       const listing = await dirRes.json();
       const opFiles = (Array.isArray(listing) ? listing : [])
-        .filter((f) => f && f.type === 'file' && typeof f.name === 'string' && f.name.endsWith('.json'));
+        .filter((f) =>
+          f &&
+          f.type === 'file' &&
+          typeof f.name === 'string' &&
+          f.name.endsWith('.json') &&
+          !f.name.includes('/') &&
+          !f.name.includes('..')
+        );
 
       const ourFile = opFiles.find((f) => f.name === `${this.deviceId}.json`);
       if (ourFile) {
@@ -339,36 +439,38 @@ class Sync {
         }
 
         const fileUrl = this._contentsUrl(settings, `ops/${f.name}`);
-        const fileRes = await this.fetch(fileUrl, {
-          method: 'GET', headers: this._headers(settings.token),
-        });
-        if (!fileRes.ok) return cached ? cached.ops : [];
-        const fileData = await fileRes.json();
-        let b64 = fileData?.content;
-        // Contents API returns empty content (encoding:"none") for files > 1MB.
-        // Fall back to the git blob API, which handles up to 100MB.
-        if (!b64 && fileData?.sha) {
-          try {
+        try {
+          const fileRes = await this.fetch(fileUrl, {
+            method: 'GET', headers: this._headers(settings.token),
+          });
+          if (!fileRes.ok) {
+            throw new Error(`pull file ${f.name} failed: ${fileRes.status}`);
+          }
+          const fileData = await fileRes.json();
+          let b64 = fileData?.content;
+          // Contents API returns empty content (encoding:"none") for files > 1MB.
+          // Fall back to the git blob API, which handles up to 100MB.
+          if (!b64 && fileData?.sha) {
             const blobUrl = this._blobUrl(settings, fileData.sha);
             const blobRes = await this.fetch(blobUrl, {
               method: 'GET', headers: this._headers(settings.token),
             });
-            if (blobRes.ok) {
-              const blobData = await blobRes.json();
-              if (blobData?.encoding === 'base64') b64 = blobData.content;
+            if (!blobRes.ok) {
+              throw new Error(`pull blob ${f.name} failed: ${blobRes.status}`);
             }
-          } catch {
-            return cached ? cached.ops : [];
+            const blobData = await blobRes.json();
+            if (blobData?.encoding === 'base64') b64 = blobData.content;
           }
-        }
-        if (!b64) return cached ? cached.ops : [];
-        try {
+          if (!b64) {
+            throw new Error(`pull file ${f.name} returned empty content`);
+          }
           const parsed = JSON.parse(decodeBase64Utf8(b64));
           const ops = Array.isArray(parsed) ? parsed : [];
           this._cachedFiles.set(f.name, { sha: f.sha, ops });
           return ops;
-        } catch {
-          return cached ? cached.ops : [];
+        } catch (err) {
+          if (cached) return cached.ops;
+          throw err;
         }
       }));
 
@@ -399,18 +501,26 @@ class Sync {
       }
 
       this.onOpsMerged(allOps);
+      this.lastPullOk = true;
       this._status('ok', '✓ synced');
       this._log(`✓ Pulled ${allOps.length} op(s) from ${opFiles.length} file(s)`);
-      return { initialized: true, ops: allOps };
+      return { initialized: true, ops: allOps, ok: true };
     } catch (e) {
+      this.lastPullOk = false;
       this._status('error', '✗ offline');
       this._log(`✗ Pull error: ${e.message}`);
+      return false;
     }
   }
 
   async syncNow() {
-    await this.pull();
-    await this.pushNow();
+    this.lastPullOk = false;
+    this.lastPushOk = true;
+    const pullRes = await this.pull();
+    const pullOk = Boolean(pullRes) && this.lastPullOk !== false;
+    const pushRes = await this.pushNow();
+    const pushOk = pushRes !== false && this.lastPushOk !== false;
+    return pullOk && pushOk;
   }
 
   // ── Batch ───────────────────────────────────────────────────────────────

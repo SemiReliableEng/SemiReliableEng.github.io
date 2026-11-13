@@ -2,16 +2,21 @@
 // every UI change. The two are compared on boot and any mismatch surfaces
 // on the settings page as a stale-SW tell.
 //
-// Three caches:
+// Five caches:
 //   CACHE             — app shell (versioned per release; deleted on activate
 //                       when superseded).
+//   VENDOR_CACHE      — pinned CDN dependencies (Leaflet, Chart.js, Google Fonts);
+//                       preserved across app-shell bumps.
 //   BASE_TILES_CACHE  — low-zoom Bay Area basemap precached on install so the
 //                       map always renders something offline. Versioned only
 //                       when the bbox/zoom range changes; survives shell bumps.
 //   TILES_CACHE       — runtime + trail-prefetched tiles. Survives shell bumps
 //                       so the page-side prefetch (z10-15 along Ridge Trail +
 //                       imported hikes) doesn't get wiped on every UI release.
-const CACHE = 'cairn-v40';
+//   RIDGE_CACHE       — static Bay Area Ridge Trail geometry (ridge-trail.json);
+//                       preserved across shell bumps.
+const CACHE = 'cairn-v41';
+const VENDOR_CACHE = 'cairn-vendor-v1';
 const BASE_TILES_CACHE = 'cairn-tiles-base-v2';
 const TILES_CACHE = 'cairn-tiles-v1';
 const RIDGE_CACHE = 'cairn-ridge-v1';
@@ -23,12 +28,7 @@ const RIDGE_CACHE = 'cairn-ridge-v1';
 // CACHE bumps in lockstep with index.html, but the local .mjs imports fall
 // through to the runtime fetch path — which on a v(N-1) → vN upgrade can
 // serve a stale .mjs from the browser's HTTP cache while serving the new
-// index.html from the SW. Result: an `import { newExport } from './x.mjs'`
-// fails, the module errors out before window.* button bindings run, and
-// every onclick="" handler in the HTML lands on `undefined`. The
-// only-symptom-on-installed-PWA-not-incognito profile in v14 was exactly
-// this; snapshot.mjs had been missing from this list since 948faf0 but the
-// hazard was latent until ceef6cf added new required exports.
+// index.html from the SW.
 const APP_SHELL = [
   './',
   './index.html',
@@ -36,12 +36,17 @@ const APP_SHELL = [
   './icon-192.png',
   './icon-512.png',
   './snapshot.mjs',
+  './geo.mjs',
   './shared/personal-sync.mjs',
 ];
 
-// CDN deps are cached opportunistically on first fetch rather than
-// precached — keeps install fast and avoids a hard dependency on every
-// CDN being reachable at install time.
+const VENDOR_URLS = [
+  'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',
+  'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js',
+];
+
+// CDN deps are cached into VENDOR_CACHE so they survive app-shell bumps.
 const CDN_HOSTS = new Set([
   'cdnjs.cloudflare.com',
   'fonts.googleapis.com',
@@ -82,29 +87,18 @@ const BASE_TILES = (() => {
 
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
-    // App shell is atomic — any failure aborts the install (correct, we want
-    // a known-good shell). Each asset is fetched with cache:'reload' so
-    // install bypasses the browser's HTTP cache (and any stale CDN edge).
-    // Without this, a SW that installs in the small window between a Pages
-    // deploy publishing sw.js and the same deploy propagating index.html
-    // through the CDN can pre-cache the *old* index.html under the new
-    // CACHE name — every subsequent normal reload then serves stale HTML
-    // even though the version line shows the new SW. The hard-reload-
-    // shows-vN-but-normal-reload-shows-v(N-1) symptom is exactly this race.
-    //
-    // Base tiles are best-effort: a missing tile is recoverable later via
-    // runtime fetch + the page's prefetch loop, so a single 404/network
-    // blip shouldn't fail the whole SW install. They're CDN-stable, not
-    // subject to the Pages-deploy race, so they don't need cache:'reload'.
     const shell = caches.open(CACHE).then((c) =>
       c.addAll(APP_SHELL.map((u) => new Request(u, { cache: 'reload' })))
     );
-    const base = caches.open(BASE_TILES_CACHE).then(async (c) => {
+    const vendor = caches.open(VENDOR_CACHE).then(async (c) => {
       const existing = new Set((await c.keys()).map((r) => r.url));
       await Promise.allSettled(
-        BASE_TILES
+        VENDOR_URLS
           .filter((u) => !existing.has(u))
-          .map((u) => c.add(u).catch(() => {}))
+          .map(async (u) => {
+            const res = await fetch(new Request(u, { mode: 'cors', credentials: 'omit' }));
+            if (res.ok) await c.put(u, res);
+          })
       );
     });
     const ridge = caches.open(RIDGE_CACHE).then(async (c) => {
@@ -112,17 +106,26 @@ self.addEventListener('install', (e) => {
         await c.add('./ridge-trail.json').catch(() => {});
       }
     });
-    await Promise.all([shell, base, ridge]);
+    // Populate base tiles best-effort without blocking or failing APP_SHELL install.
+    caches.open(BASE_TILES_CACHE).then(async (c) => {
+      const existing = new Set((await c.keys()).map((r) => r.url));
+      await Promise.allSettled(
+        BASE_TILES
+          .filter((u) => !existing.has(u))
+          .map((u) => c.add(u).catch(() => {}))
+      );
+    }).catch(() => {});
+    await Promise.all([shell, vendor, ridge]);
     await self.skipWaiting();
   })());
 });
 
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
-    const keep = new Set([CACHE, BASE_TILES_CACHE, TILES_CACHE, RIDGE_CACHE]);
+    const keep = new Set([CACHE, VENDOR_CACHE, BASE_TILES_CACHE, TILES_CACHE, RIDGE_CACHE]);
     const keys = await caches.keys();
     await Promise.all(
-      keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k))
+      keys.filter((k) => k.startsWith('cairn-') && !keep.has(k)).map((k) => caches.delete(k))
     );
     await self.clients.claim();
   })());
@@ -140,9 +143,7 @@ self.addEventListener('message', (e) => {
 
 // Sync-complete notifications fire from the page after the manual Sync Now
 // path settles. Clicking the body or the OK action focuses an existing app
-// window (or opens one). The click also pumps Chrome's site-engagement
-// counter, which is the heuristic that gates auto-grant of
-// `navigator.storage.persist()` — see index.html's notifySync().
+// window (or opens one).
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   e.waitUntil((async () => {
@@ -185,17 +186,35 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Same-origin app shell + CDN deps: cache-first, populate on miss.
-  // Navigations fall back to index.html when entirely offline so the app
-  // still boots.
-  if (url.origin === self.location.origin || CDN_HOSTS.has(url.hostname)) {
+  // CDN vendor dependencies: cache-first, populate into persistent VENDOR_CACHE.
+  if (CDN_HOSTS.has(url.hostname)) {
     e.respondWith(
       caches.match(req).then((cached) => {
         if (cached) return cached;
         return fetch(req).then((res) => {
           if (res.ok && (res.type === 'basic' || res.type === 'cors')) {
             const clone = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, clone)).catch(() => {});
+            caches.open(VENDOR_CACHE).then((c) => c.put(req, clone)).catch(() => {});
+          }
+          return res;
+        }).catch(() => new Response('', { status: 504 }));
+      }),
+    );
+    return;
+  }
+
+  // Same-origin app shell + static assets: cache-first, populate on miss.
+  // Navigations fall back to index.html when entirely offline so the app
+  // still boots.
+  if (url.origin === self.location.origin) {
+    const targetCache = url.pathname.endsWith('/ridge-trail.json') ? RIDGE_CACHE : CACHE;
+    e.respondWith(
+      caches.match(req).then((cached) => {
+        if (cached) return cached;
+        return fetch(req).then((res) => {
+          if (res.ok && (res.type === 'basic' || res.type === 'cors')) {
+            const clone = res.clone();
+            caches.open(targetCache).then((c) => c.put(req, clone)).catch(() => {});
           }
           return res;
         }).catch(() => {
